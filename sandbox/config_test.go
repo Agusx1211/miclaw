@@ -1,8 +1,10 @@
 package sandbox
 
-import "testing"
+import (
+	"testing"
 
-import "github.com/agusx1211/miclaw/config"
+	"github.com/agusx1211/miclaw/config"
+)
 
 func TestBuildDockerRunArgsNetworkModeNone(t *testing.T) {
 	got := BuildDockerRunArgs(config.SandboxConfig{Network: "none"})
