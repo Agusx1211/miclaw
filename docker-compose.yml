@@ -1,0 +1,33 @@
+services:
+  miclaw:
+    build:
+      context: .
+    network_mode: ${MICLAW_NETWORK_MODE:-none}
+    restart: unless-stopped
+    working_dir: /workspace
+    environment:
+      MICLAW_CONFIG_PATH: ${MICLAW_CONFIG_PATH:-/workspace/config.json}
+    command: ["-config", "${MICLAW_CONFIG_PATH}"]
+    volumes:
+      - ${MICLAW_WORKSPACE_HOST:-./workspace}:/workspace:rw
+      - ${MICLAW_CONFIG_HOST:-./config.json}:/workspace/config.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "/usr/local/bin/miclaw -config ${MICLAW_CONFIG_PATH} -version >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  signal-cli:
+    image: bbernhard/signal-cli-rest-api:latest
+    profiles:
+      - with-signal
+    network_mode: service:miclaw
+    volumes:
+      - ${SIGNAL_CLI_DATA:-./signal-data}:/home/.local/share/signal-cli
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f signal-cli >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
