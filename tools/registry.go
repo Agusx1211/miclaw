@@ -9,7 +9,7 @@ import (
 
 func MainAgentTools() []Tool {
 	return []Tool{
-		placeholder("read", "placeholder read tool", JSONSchema{Type: "object"}),
+		ReadTool(),
 		placeholder("write", "placeholder write tool", JSONSchema{Type: "object"}),
 		placeholder("edit", "placeholder edit tool", JSONSchema{Type: "object"}),
 		placeholder("apply_patch", "placeholder apply_patch tool", JSONSchema{Type: "object"}),
@@ -34,7 +34,7 @@ func MainAgentTools() []Tool {
 
 func SubAgentTools() []Tool {
 	return []Tool{
-		placeholder("read", "placeholder read tool", JSONSchema{Type: "object"}),
+		ReadTool(),
 		placeholder("grep", "placeholder grep tool", JSONSchema{Type: "object"}),
 		placeholder("glob", "placeholder glob tool", JSONSchema{Type: "object"}),
 		placeholder("ls", "placeholder ls tool", JSONSchema{Type: "object"}),
