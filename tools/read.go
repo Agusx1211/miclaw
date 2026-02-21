@@ -33,12 +33,6 @@ type rawReadParams struct {
 	Limit  *int   `json:"limit"`
 }
 
-func must(cond bool, msg string) {
-	if !cond {
-		panic(msg)
-	}
-}
-
 func ReadTool() Tool {
 	name := "read"
 	desc := "Read file contents with line numbers"

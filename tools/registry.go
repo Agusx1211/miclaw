@@ -13,9 +13,9 @@ func MainAgentTools() []Tool {
 		placeholder("write", "placeholder write tool", JSONSchema{Type: "object"}),
 		placeholder("edit", "placeholder edit tool", JSONSchema{Type: "object"}),
 		placeholder("apply_patch", "placeholder apply_patch tool", JSONSchema{Type: "object"}),
-		placeholder("grep", "placeholder grep tool", JSONSchema{Type: "object"}),
-		placeholder("glob", "placeholder glob tool", JSONSchema{Type: "object"}),
-		placeholder("ls", "placeholder ls tool", JSONSchema{Type: "object"}),
+		grepTool(),
+		globTool(),
+		lsTool(),
 		placeholder("exec", "placeholder exec tool", JSONSchema{Type: "object"}),
 		placeholder("process", "placeholder process tool", JSONSchema{Type: "object"}),
 		placeholder("cron", "placeholder cron tool", JSONSchema{Type: "object"}),
@@ -35,9 +35,9 @@ func MainAgentTools() []Tool {
 func SubAgentTools() []Tool {
 	return []Tool{
 		ReadTool(),
-		placeholder("grep", "placeholder grep tool", JSONSchema{Type: "object"}),
-		placeholder("glob", "placeholder glob tool", JSONSchema{Type: "object"}),
-		placeholder("ls", "placeholder ls tool", JSONSchema{Type: "object"}),
+		grepTool(),
+		globTool(),
+		lsTool(),
 		placeholder("memory_search", "placeholder memory_search tool", JSONSchema{Type: "object"}),
 		placeholder("memory_get", "placeholder memory_get tool", JSONSchema{Type: "object"}),
 	}
