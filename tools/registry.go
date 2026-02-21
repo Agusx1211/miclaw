@@ -16,7 +16,7 @@ func MainAgentTools() []Tool {
 		grepTool(),
 		globTool(),
 		lsTool(),
-		placeholder("exec", "placeholder exec tool", JSONSchema{Type: "object"}),
+		execTool(),
 		placeholder("process", "placeholder process tool", JSONSchema{Type: "object"}),
 		placeholder("cron", "placeholder cron tool", JSONSchema{Type: "object"}),
 		placeholder("message", "placeholder message tool", JSONSchema{Type: "object"}),
