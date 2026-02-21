@@ -5,6 +5,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/agusx1211/miclaw/prompt"
 	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
 	"github.com/agusx1211/miclaw/tools"
@@ -19,6 +20,12 @@ type Agent struct {
 	cancel      context.CancelFunc
 	eventBroker *Broker[AgentEvent]
 	queue       *InputQueue
+	workspace   *prompt.Workspace
+	skills      []prompt.SkillSummary
+	memory      string
+	heartbeat   string
+	runtimeInfo string
+	lastUsage   *provider.UsageInfo
 
 	mu    sync.Mutex
 	runID atomic.Uint64
@@ -38,6 +45,8 @@ func NewAgent(
 		provider:    prov,
 		eventBroker: NewBroker[AgentEvent](),
 		queue:       &InputQueue{},
+		workspace:   &prompt.Workspace{},
+		skills:      []prompt.SkillSummary{},
 	}
 
 	return a
