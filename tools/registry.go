@@ -3,6 +3,7 @@ package tools
 import (
 	"context"
 
+	"github.com/agusx1211/miclaw/config"
 	"github.com/agusx1211/miclaw/memory"
 	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
@@ -12,6 +13,7 @@ type MainToolDeps struct {
 	Sessions    store.SessionStore
 	Messages    store.MessageStore
 	Provider    provider.LLMProvider
+	Sandbox     config.SandboxConfig
 	Memory      *memory.Store
 	Embed       *memory.EmbedClient
 	Scheduler   *Scheduler
@@ -29,7 +31,7 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		grepTool(),
 		globTool(),
 		lsTool(),
-		execTool(),
+		execToolWithSandbox(deps.Sandbox),
 		processTool(),
 		CronTool(deps.Scheduler),
 		messageTool(deps.SendMessage),
@@ -59,4 +61,3 @@ func SubAgentTools(store *memory.Store, embedClient *memory.EmbedClient) []Tool 
 
 	return tools
 }
-
