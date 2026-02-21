@@ -82,6 +82,12 @@ Dead code is not "there if we need it later." Dead code is a liability. Delete i
 
 We copy openclaw's *functionality*, not its *implementation*. The original codebase is bloated. Study what it does, then write the simplest Go code that achieves the same result.
 
+## Development Credentials
+
+- `./DEV_VARS.md` contains development API keys for OpenRouter. This file is `.gitignored` and must stay that way.
+- **Use freely for integration tests.** When running integration tests against real models, source credentials from `DEV_VARS.md`. No need to ask permission.
+- **NEVER reveal credentials.** Do not commit, or include credentials in any output, error message, test fixture, or code comment.
+
 ## Summary
 
 Write small code. Test everything. Crash on bad state. No defensive fluff. No abstractions without immediate payoff. Reproduce bugs before fixing. Keep it lean.
