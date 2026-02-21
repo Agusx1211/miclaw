@@ -6,8 +6,15 @@ import (
 	"testing"
 )
 
+func mainDeps() MainToolDeps {
+	return MainToolDeps{
+		Model:    "test-model",
+		IsActive: func() bool { return false },
+	}
+}
+
 func TestMainAgentToolsReturns20UniqueTools(t *testing.T) {
-	got := MainAgentTools()
+	got := MainAgentTools(mainDeps())
 	if len(got) != 20 {
 		t.Fatalf("want 20 tools, got %d", len(got))
 	}
@@ -43,7 +50,7 @@ func TestSubAgentToolsReturns6Tools(t *testing.T) {
 }
 
 func TestSubAgentToolsAreSubsetOfMainTools(t *testing.T) {
-	mainTools := MainAgentTools()
+	mainTools := MainAgentTools(mainDeps())
 	subTools := SubAgentTools()
 	mainSet := make(map[string]struct{}, len(mainTools))
 	for _, tool := range mainTools {
