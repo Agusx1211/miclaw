@@ -105,7 +105,7 @@ func TestSessionsSpawnSimpleResponse(t *testing.T) {
 		fn:    streamEvents(provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "sub-done"}, provider.ProviderEvent{Type: provider.EventComplete}),
 		model: provider.ModelInfo{Name: "test"},
 	}
-	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, time.Second)
+	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, nil, nil, time.Second)
 	got, err := runSpawnCall(parentCtx("parent"), tool, "child-1", map[string]any{"prompt": "task", "title": "research"})
 	if err != nil {
 		t.Fatalf("run sessions_spawn: %v", err)
@@ -148,7 +148,7 @@ func TestSessionsSpawnUsesReadTool(t *testing.T) {
 			)(context.Background(), nil, nil)
 		},
 	}
-	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, time.Second)
+	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, nil, nil, time.Second)
 	got, err := runSpawnCall(parentCtx("parent"), tool, "child-read", map[string]any{"prompt": "read file"})
 	if err != nil {
 		t.Fatalf("run sessions_spawn: %v", err)
@@ -165,7 +165,7 @@ func TestSessionsSpawnSubAgentCannotSpawn(t *testing.T) {
 		fn:    streamEvents(provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "ok"}, provider.ProviderEvent{Type: provider.EventComplete}),
 		model: provider.ModelInfo{Name: "test"},
 	}
-	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, time.Second)
+	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, nil, nil, time.Second)
 	if _, err := runSpawnCall(parentCtx("p"), tool, "child-tools", map[string]any{"prompt": "tools?"}); err != nil {
 		t.Fatalf("run sessions_spawn: %v", err)
 	}
@@ -197,7 +197,7 @@ func TestSessionsSpawnTimeout(t *testing.T) {
 			return ch
 		},
 	}
-	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, 20*time.Millisecond)
+	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, nil, nil, 20*time.Millisecond)
 	_, err := runSpawnCall(parentCtx("parent"), tool, "child-timeout", map[string]any{"prompt": "wait"})
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("expected deadline exceeded, got %v", err)
@@ -216,7 +216,7 @@ func TestSessionsSpawnConcurrent(t *testing.T) {
 			)(context.Background(), nil, nil)
 		},
 	}
-	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, time.Second)
+	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, nil, nil, time.Second)
 	const n = 5
 	type result struct {
 		i   int
@@ -266,7 +266,7 @@ func TestSubagentsListShowsActive(t *testing.T) {
 			return ch
 		},
 	}
-	spawn := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, time.Second)
+	spawn := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, nil, nil, time.Second)
 	list := subagentsTool()
 	done := make(chan error, 1)
 	go func() {
@@ -305,7 +305,7 @@ func TestSessionsSpawnUsesMinimalPrompt(t *testing.T) {
 		fn:    streamEvents(provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "ok"}, provider.ProviderEvent{Type: provider.EventComplete}),
 		model: provider.ModelInfo{Name: "test"},
 	}
-	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, time.Second)
+	tool := sessionsSpawnToolWithTimeout(s.SessionStore(), s.MessageStore(), p, nil, nil, time.Second)
 	if _, err := runSpawnCall(parentCtx("parent"), tool, "child-prompt", map[string]any{"prompt": "probe"}); err != nil {
 		t.Fatalf("run sessions_spawn: %v", err)
 	}

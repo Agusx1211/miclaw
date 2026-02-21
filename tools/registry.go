@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/agusx1211/miclaw/memory"
 	"github.com/agusx1211/miclaw/model"
 	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
@@ -13,6 +14,8 @@ type MainToolDeps struct {
 	Sessions store.SessionStore
 	Messages store.MessageStore
 	Provider provider.LLMProvider
+	Memory   *memory.Store
+	Embed    *memory.EmbedClient
 	Model    string
 	IsActive func() bool
 }
@@ -34,24 +37,24 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		sessionsListTool(deps.Sessions),
 		sessionsHistoryTool(deps.Sessions, deps.Messages),
 		sessionsSendTool(deps.Sessions, deps.Messages),
-		sessionsSpawnTool(deps.Sessions, deps.Messages, deps.Provider),
+		sessionsSpawnTool(deps.Sessions, deps.Messages, deps.Provider, deps.Memory, deps.Embed),
 		sessionsStatusTool(deps.Sessions, deps.Messages),
-		placeholder("memory_search", "placeholder memory_search tool", JSONSchema{Type: "object"}),
-		placeholder("memory_get", "placeholder memory_get tool", JSONSchema{Type: "object"}),
+		MemorySearchTool(deps.Memory, deps.Embed),
+		MemoryGetTool(deps.Memory),
 		subagentsTool(),
 	}
 
 	return tools
 }
 
-func SubAgentTools() []Tool {
+func SubAgentTools(store *memory.Store, embedClient *memory.EmbedClient) []Tool {
 	tools := []Tool{
 		ReadTool(),
 		grepTool(),
 		globTool(),
 		lsTool(),
-		placeholder("memory_search", "placeholder memory_search tool", JSONSchema{Type: "object"}),
-		placeholder("memory_get", "placeholder memory_get tool", JSONSchema{Type: "object"}),
+		MemorySearchTool(store, embedClient),
+		MemoryGetTool(store),
 	}
 
 	return tools

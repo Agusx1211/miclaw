@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/binary"
 	"math"
+	"sort"
 	"time"
 )
 
@@ -161,6 +162,62 @@ func (s *Store) SearchFTS(query string, limit int) ([]SearchResult, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+func (s *Store) SearchVector(queryVec []float32, limit int) ([]SearchResult, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := s.db.Query(
+		`SELECT id, path, start_line, end_line, hash, text, embedding
+		 FROM chunks WHERE embedding IS NOT NULL AND length(embedding) > 0`,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []SearchResult{}
+	for rows.Next() {
+		var r SearchResult
+		var emb []byte
+		if err := rows.Scan(&r.ID, &r.Path, &r.StartLine, &r.EndLine, &r.Hash, &r.Text, &emb); err != nil {
+			return nil, err
+		}
+		r.Embedding = decodeEmbedding(emb)
+		r.Score = cosineSimilarity(queryVec, r.Embedding)
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score == out[j].Score {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Score > out[j].Score
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+func cosineSimilarity(a, b []float32) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	var dot, na, nb float64
+	for i := range a {
+		av := float64(a[i])
+		bv := float64(b[i])
+		dot += av * bv
+		na += av * av
+		nb += bv * bv
+	}
+	if na == 0 || nb == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(na) * math.Sqrt(nb))
 }
 
 func encodeEmbedding(v []float32) []byte {
