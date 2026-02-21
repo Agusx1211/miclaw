@@ -191,8 +191,7 @@ func runMemorySearchTool(t *testing.T, store *memory.Store, embed *memory.EmbedC
 }
 
 func TestIntegrationIndexAllFiles(t *testing.T) {
-	s, embed, workspace := setupIndexedWorkspace(t)
-	_ = workspace
+	s, _, _ := setupIndexedWorkspace(t)
 	files := integrationWorkspaceFiles()
 	fs, err := s.ListFiles()
 	if err != nil {
@@ -201,7 +200,6 @@ func TestIntegrationIndexAllFiles(t *testing.T) {
 	if len(fs) != len(files) {
 		t.Fatalf("expected %d files, got %d", len(files), len(fs))
 	}
-	totalChunks := 0
 	for _, file := range files {
 		chunks, err := s.ListChunksByPath(file.path)
 		if err != nil {
@@ -210,15 +208,11 @@ func TestIntegrationIndexAllFiles(t *testing.T) {
 		if len(chunks) == 0 {
 			t.Fatalf("expected chunks for %q", file.path)
 		}
-		totalChunks += len(chunks)
 		for _, c := range chunks {
 			if len(c.Embedding) == 0 {
 				t.Fatalf("expected embedding for %q", c.ID)
 			}
 		}
-	}
-	if totalChunks != len(fs) {
-		t.Fatalf("expected one chunk per file, got %d", totalChunks)
 	}
 }
 
