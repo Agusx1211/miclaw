@@ -67,6 +67,7 @@ func runExec(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
 	cmd := exec.Command("sh", "-c", params.Command)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if params.WorkingDir != "" {
 		cmd.Dir = params.WorkingDir
 	}
@@ -145,7 +146,8 @@ func runForegroundCommand(ctx context.Context, cmd *exec.Cmd, timeout int) (int,
 }
 
 func terminateCommand(cmd *exec.Cmd, done <-chan int) int {
-	_ = cmd.Process.Signal(syscall.SIGTERM)
+	pgid := cmd.Process.Pid
+	_ = syscall.Kill(-pgid, syscall.SIGTERM)
 	grace := time.NewTimer(execKillGraceTimeout)
 	defer grace.Stop()
 
@@ -153,13 +155,8 @@ func terminateCommand(cmd *exec.Cmd, done <-chan int) int {
 	case code := <-done:
 		return code
 	case <-grace.C:
-		_ = cmd.Process.Signal(syscall.SIGKILL)
-		select {
-		case code := <-done:
-			return code
-		default:
-			return -1
-		}
+		_ = syscall.Kill(-pgid, syscall.SIGKILL)
+		return <-done
 	}
 }
 
