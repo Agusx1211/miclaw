@@ -134,6 +134,7 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		Sessions:  sqlStore.Sessions,
 		Messages:  sqlStore.Messages,
 		Provider:  prov,
+		Sandbox:   cfg.Sandbox,
 		Memory:    memStore,
 		Embed:     embedClient,
 		Scheduler: scheduler,
