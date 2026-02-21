@@ -88,21 +88,14 @@ restrict,command="/usr/local/sbin/miclaw-cmd-wrapper" ssh-ed25519 AAAAC3... agen
 
 A small script on the host that reads `SSH_ORIGINAL_COMMAND`, validates it against an allowlist, and execs the real binary. The wrapper is the enforcement point.
 
+The ready-to-use script is now checked in as `deploy/miclaw-cmd-wrapper` (install it as
+`/usr/local/sbin/miclaw-cmd-wrapper`). It uses first-token matching, which mirrors container-side
+`tools/exec.go` behavior.
+
 ```bash
-#!/bin/bash
-set -euo pipefail
-
-ALLOWED=("pipo" "git status" "docker ps")
-
-cmd="$SSH_ORIGINAL_COMMAND"
-for allowed in "${ALLOWED[@]}"; do
-    if [[ "$cmd" == "$allowed" ]]; then
-        exec $cmd
-    fi
-done
-
-echo "denied: $cmd" >&2
-exit 1
+# See deploy/miclaw-cmd-wrapper for the full script.
+SSH_ORIGINAL_COMMAND='git status'  # allowed
+SSH_ORIGINAL_COMMAND='rm -rf /'    # denied
 ```
 
 The allowlist is configured per deployment. If a command needs root:
