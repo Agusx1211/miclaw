@@ -3,6 +3,7 @@ package tools
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"sync"
@@ -19,8 +20,10 @@ type ProcManager struct {
 
 type managedProc struct {
 	cmd       *exec.Cmd
+	stdin     io.WriteCloser
 	output    *bytes.Buffer
 	startTime time.Time
+	endTime   time.Time
 	done      chan struct{}
 	exitCode  int
 	finished  bool
@@ -37,8 +40,13 @@ func NewProcManager() *ProcManager {
 
 func (m *ProcManager) Start(cmd *exec.Cmd) int {
 	m.reap()
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		panic(err)
+	}
 	proc := &managedProc{
 		cmd:       cmd,
+		stdin:     stdin,
 		output:    &bytes.Buffer{},
 		startTime: time.Now(),
 		done:      make(chan struct{}),
@@ -48,6 +56,7 @@ func (m *ProcManager) Start(cmd *exec.Cmd) int {
 	cmd.Stderr = out
 
 	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
 		panic(err)
 	}
 	pid := cmd.Process.Pid
@@ -67,16 +76,25 @@ func (m *ProcManager) Status(pid int) (bool, int, string, error) {
 	if !ok {
 		return false, 0, "", fmt.Errorf("process %d not found", pid)
 	}
-	return !proc.finished, proc.exitCode, proc.output.String(), nil
+	end := time.Now()
+	if proc.finished {
+		end = proc.endTime
+	}
+	return !proc.finished, proc.exitCode, end.Sub(proc.startTime).String(), nil
 }
 
 func (m *ProcManager) Signal(pid int, sig os.Signal) error {
 	m.mu.Lock()
-	_, ok := m.procs[pid]
-	m.mu.Unlock()
+	proc, ok := m.procs[pid]
 	if !ok {
+		m.mu.Unlock()
 		return fmt.Errorf("process %d not found", pid)
 	}
+	if proc.finished {
+		m.mu.Unlock()
+		return fmt.Errorf("process %d already completed", pid)
+	}
+	m.mu.Unlock()
 	s, ok := sig.(syscall.Signal)
 	if !ok {
 		return fmt.Errorf("unsupported signal type")
@@ -85,8 +103,30 @@ func (m *ProcManager) Signal(pid int, sig os.Signal) error {
 }
 
 func (m *ProcManager) Poll(pid int) (string, error) {
-	_, _, output, err := m.Status(pid)
-	return output, err
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	proc, ok := m.procs[pid]
+	if !ok {
+		return "", fmt.Errorf("process %d not found", pid)
+	}
+	return proc.output.String(), nil
+}
+
+func (m *ProcManager) SendInput(pid int, data string) error {
+	m.mu.Lock()
+	proc, ok := m.procs[pid]
+	if !ok {
+		m.mu.Unlock()
+		return fmt.Errorf("process %d not found", pid)
+	}
+	if proc.finished {
+		m.mu.Unlock()
+		return fmt.Errorf("process %d already completed", pid)
+	}
+	stdin := proc.stdin
+	m.mu.Unlock()
+	_, err := io.WriteString(stdin, data)
+	return err
 }
 
 func (m *ProcManager) wait(pid int) {
@@ -95,9 +135,11 @@ func (m *ProcManager) wait(pid int) {
 		return
 	}
 	_ = proc.cmd.Wait()
+	_ = proc.stdin.Close()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	proc.exitCode = proc.cmd.ProcessState.ExitCode()
+	proc.endTime = time.Now()
 	proc.finished = true
 	close(proc.done)
 }
