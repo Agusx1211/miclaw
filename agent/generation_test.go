@@ -11,7 +11,7 @@ import (
 	"github.com/agusx1211/miclaw/model"
 	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
-	"github.com/agusx1211/miclaw/tools"
+	"github.com/agusx1211/miclaw/tooling"
 )
 
 type scriptedProvider struct {
@@ -68,15 +68,15 @@ func (t *echoTool) Name() string { return "echo" }
 
 func (t *echoTool) Description() string { return "echo tool" }
 
-func (t *echoTool) Parameters() tools.JSONSchema {
-	return tools.JSONSchema{Type: "object"}
+func (t *echoTool) Parameters() tooling.JSONSchema {
+	return tooling.JSONSchema{Type: "object"}
 }
 
-func (t *echoTool) Run(_ context.Context, call model.ToolCallPart) (tools.ToolResult, error) {
+func (t *echoTool) Run(_ context.Context, call model.ToolCallPart) (tooling.ToolResult, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.calls = append(t.calls, call)
-	return tools.ToolResult{Content: "tool-ok", IsError: false}, nil
+	return tooling.ToolResult{Content: "tool-ok", IsError: false}, nil
 }
 
 func (t *echoTool) Calls() []model.ToolCallPart {
@@ -93,20 +93,20 @@ func (t *cancellationTool) Name() string { return "slow" }
 
 func (t *cancellationTool) Description() string { return "slow tool" }
 
-func (t *cancellationTool) Parameters() tools.JSONSchema {
-	return tools.JSONSchema{Type: "object"}
+func (t *cancellationTool) Parameters() tooling.JSONSchema {
+	return tooling.JSONSchema{Type: "object"}
 }
 
-func (t *cancellationTool) Run(ctx context.Context, call model.ToolCallPart) (tools.ToolResult, error) {
+func (t *cancellationTool) Run(ctx context.Context, call model.ToolCallPart) (tooling.ToolResult, error) {
 	if call.ID == "call1" {
-		return tools.ToolResult{Content: "first", IsError: false}, nil
+		return tooling.ToolResult{Content: "first", IsError: false}, nil
 	}
 	if call.ID == "call2" {
 		close(t.started)
 		<-ctx.Done()
-		return tools.ToolResult{}, ctx.Err()
+		return tooling.ToolResult{}, ctx.Err()
 	}
-	return tools.ToolResult{Content: "third", IsError: false}, nil
+	return tooling.ToolResult{Content: "third", IsError: false}, nil
 }
 
 func openAgentStore(t *testing.T) *store.SQLiteStore {
@@ -215,7 +215,7 @@ func TestProcessGenerationWithToolCalls(t *testing.T) {
 			),
 		},
 	}
-	a := NewAgent(s.SessionStore(), s.MessageStore(), []tools.Tool{tool}, p)
+	a := NewAgent(s.SessionStore(), s.MessageStore(), []tooling.Tool{tool}, p)
 	evCh, unsub := a.Events().Subscribe()
 	defer unsub()
 
@@ -402,7 +402,7 @@ func TestRunToolsCancellationMarksRemaining(t *testing.T) {
 		<-tool.started
 		cancel()
 	}()
-	msg, err := runTools(ctx, "s1", []tools.Tool{tool}, calls)
+	msg, err := runTools(ctx, "s1", []tooling.Tool{tool}, calls)
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context canceled, got %v", err)
 	}

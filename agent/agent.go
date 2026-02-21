@@ -8,13 +8,13 @@ import (
 	"github.com/agusx1211/miclaw/prompt"
 	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
-	"github.com/agusx1211/miclaw/tools"
+	"github.com/agusx1211/miclaw/tooling"
 )
 
 type Agent struct {
 	sessions    store.SessionStore
 	messages    store.MessageStore
-	tools       []tools.Tool
+	tools       []tooling.Tool
 	provider    provider.LLMProvider
 	active      atomic.Bool
 	cancel      context.CancelFunc
@@ -25,6 +25,7 @@ type Agent struct {
 	memory      string
 	heartbeat   string
 	runtimeInfo string
+	promptMode  string
 	lastUsage   *provider.UsageInfo
 
 	mu    sync.Mutex
@@ -34,22 +35,33 @@ type Agent struct {
 func NewAgent(
 	sessions store.SessionStore,
 	messages store.MessageStore,
-	toolList []tools.Tool,
+	toolList []tooling.Tool,
 	prov provider.LLMProvider,
 ) *Agent {
 
 	a := &Agent{
 		sessions:    sessions,
 		messages:    messages,
-		tools:       append([]tools.Tool(nil), toolList...),
+		tools:       append([]tooling.Tool(nil), toolList...),
 		provider:    prov,
 		eventBroker: NewBroker[AgentEvent](),
 		queue:       &InputQueue{},
 		workspace:   &prompt.Workspace{},
 		skills:      []prompt.SkillSummary{},
+		promptMode:  "full",
 	}
 
 	return a
+}
+
+func (a *Agent) RunOnce(ctx context.Context, input Input) error {
+
+	return a.processGeneration(ctx, input)
+}
+
+func (a *Agent) SetPromptMode(mode string) {
+
+	a.promptMode = mode
 }
 
 func (a *Agent) Enqueue(input Input) {

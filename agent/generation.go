@@ -10,7 +10,7 @@ import (
 	"github.com/agusx1211/miclaw/model"
 	"github.com/agusx1211/miclaw/prompt"
 	"github.com/agusx1211/miclaw/provider"
-	"github.com/agusx1211/miclaw/tools"
+	"github.com/agusx1211/miclaw/tooling"
 	"github.com/google/uuid"
 )
 
@@ -97,7 +97,7 @@ func newUserMessage(sessionID, content string) *Message {
 	return msg
 }
 
-func (a *Agent) streamAndHandle(ctx context.Context, session *Session, messages []*Message, toolList []tools.Tool) (bool, error) {
+func (a *Agent) streamAndHandle(ctx context.Context, session *Session, messages []*Message, toolList []tooling.Tool) (bool, error) {
 	a.setLastUsage(nil)
 
 	assistant := &Message{ID: uuid.NewString(), SessionID: session.ID, Role: RoleAssistant, CreatedAt: time.Now().UTC()}
@@ -216,8 +216,9 @@ func buildAssistantParts(text, reasoning string, calls []ToolCallPart) []Message
 	return parts
 }
 
-func runTools(ctx context.Context, sessionID string, toolList []tools.Tool, calls []ToolCallPart) (*Message, error) {
+func runTools(ctx context.Context, sessionID string, toolList []tooling.Tool, calls []ToolCallPart) (*Message, error) {
 
+	ctx = tooling.WithSessionID(ctx, sessionID)
 	parts := make([]MessagePart, 0, len(calls))
 	for i, call := range calls {
 		if err := ctx.Err(); err != nil {
@@ -250,7 +251,7 @@ func newToolMessage(sessionID string, parts []MessagePart) *Message {
 	return &Message{ID: uuid.NewString(), SessionID: sessionID, Role: RoleTool, Parts: parts, CreatedAt: time.Now().UTC()}
 }
 
-func runTool(ctx context.Context, toolList []tools.Tool, call ToolCallPart) ToolResultPart {
+func runTool(ctx context.Context, toolList []tooling.Tool, call ToolCallPart) ToolResultPart {
 
 	tool := findTool(toolList, call.Name)
 	if tool == nil {
@@ -264,7 +265,7 @@ func runTool(ctx context.Context, toolList []tools.Tool, call ToolCallPart) Tool
 	return ToolResultPart{ToolCallID: call.ID, Content: result.Content, IsError: result.IsError}
 }
 
-func findTool(toolList []tools.Tool, name string) tools.Tool {
+func findTool(toolList []tooling.Tool, name string) tooling.Tool {
 
 	for _, tool := range toolList {
 		if tool.Name() == name {
@@ -274,9 +275,9 @@ func findTool(toolList []tools.Tool, name string) tools.Tool {
 	return nil
 }
 
-func toProviderDefs(toolList []tools.Tool) []provider.ToolDef {
+func toProviderDefs(toolList []tooling.Tool) []provider.ToolDef {
 
-	raw := tools.ToProviderDefs(toolList)
+	raw := tooling.ToProviderDefs(toolList)
 	defs := make([]provider.ToolDef, 0, len(raw))
 	for _, def := range raw {
 		defs = append(defs, provider.ToolDef{Name: def.Name, Description: def.Description, Parameters: def.Parameters})
@@ -303,8 +304,12 @@ func (a *Agent) buildHistory(session *Session, messages []*Message) []model.Mess
 
 func (a *Agent) systemMessage(sessionID string) model.Message {
 
+	mode := a.promptMode
+	if mode == "" {
+		mode = "full"
+	}
 	txt := prompt.BuildSystemPrompt(prompt.SystemPromptParams{
-		Mode:         "full",
+		Mode:         mode,
 		Workspace:    a.workspace,
 		Skills:       a.skills,
 		MemoryRecall: a.memory,

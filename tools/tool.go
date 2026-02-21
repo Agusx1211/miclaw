@@ -5,28 +5,12 @@ import (
 	"fmt"
 
 	"github.com/agusx1211/miclaw/model"
+	"github.com/agusx1211/miclaw/tooling"
 )
 
-type Tool interface {
-	Name() string
-	Description() string
-	Parameters() JSONSchema
-	Run(ctx context.Context, call model.ToolCallPart) (ToolResult, error)
-}
-
-type JSONSchema struct {
-	Type       string                `json:"type"`
-	Properties map[string]JSONSchema `json:"properties,omitempty"`
-	Required   []string              `json:"required,omitempty"`
-	Items      *JSONSchema           `json:"items,omitempty"`
-	Enum       []string              `json:"enum,omitempty"`
-	Desc       string                `json:"description,omitempty"`
-}
-
-type ToolResult struct {
-	Content string
-	IsError bool
-}
+type Tool = tooling.Tool
+type JSONSchema = tooling.JSONSchema
+type ToolResult = tooling.ToolResult
 
 type tool struct {
 	name   string

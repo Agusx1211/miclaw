@@ -5,12 +5,14 @@ import (
 	"fmt"
 
 	"github.com/agusx1211/miclaw/model"
+	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
 )
 
 type MainToolDeps struct {
 	Sessions store.SessionStore
 	Messages store.MessageStore
+	Provider provider.LLMProvider
 	Model    string
 	IsActive func() bool
 }
@@ -32,11 +34,11 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		sessionsListTool(deps.Sessions),
 		sessionsHistoryTool(deps.Sessions, deps.Messages),
 		sessionsSendTool(deps.Sessions, deps.Messages),
-		placeholder("sessions_spawn", "placeholder sessions_spawn tool", JSONSchema{Type: "object"}),
+		sessionsSpawnTool(deps.Sessions, deps.Messages, deps.Provider),
 		sessionsStatusTool(deps.Sessions, deps.Messages),
 		placeholder("memory_search", "placeholder memory_search tool", JSONSchema{Type: "object"}),
 		placeholder("memory_get", "placeholder memory_get tool", JSONSchema{Type: "object"}),
-		placeholder("subagents", "placeholder subagents tool", JSONSchema{Type: "object"}),
+		subagentsTool(),
 	}
 
 	return tools

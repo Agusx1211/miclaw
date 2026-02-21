@@ -9,7 +9,7 @@ import (
 
 	"github.com/agusx1211/miclaw/model"
 	"github.com/agusx1211/miclaw/provider"
-	"github.com/agusx1211/miclaw/tools"
+	"github.com/agusx1211/miclaw/tooling"
 )
 
 type stubSessionStore struct{}
@@ -53,12 +53,12 @@ func (stubTool) Description() string {
 	return "stub tool"
 }
 
-func (stubTool) Parameters() tools.JSONSchema {
-	return tools.JSONSchema{Type: "object"}
+func (stubTool) Parameters() tooling.JSONSchema {
+	return tooling.JSONSchema{Type: "object"}
 }
 
-func (stubTool) Run(context.Context, model.ToolCallPart) (tools.ToolResult, error) {
-	return tools.ToolResult{Content: "ok", IsError: false}, nil
+func (stubTool) Run(context.Context, model.ToolCallPart) (tooling.ToolResult, error) {
+	return tooling.ToolResult{Content: "ok", IsError: false}, nil
 }
 
 func newTestAgent(t *testing.T) *Agent {
@@ -66,7 +66,7 @@ func newTestAgent(t *testing.T) *Agent {
 	a := NewAgent(
 		stubSessionStore{},
 		stubMessageStore{},
-		[]tools.Tool{stubTool{}},
+		[]tooling.Tool{stubTool{}},
 		stubProvider{},
 	)
 	if a == nil {

@@ -1,25 +1,10 @@
 package tools
 
-import "encoding/json"
+import "github.com/agusx1211/miclaw/tooling"
 
-type ToolDef struct {
-	Name        string          `json:"name"`
-	Description string          `json:"description"`
-	Parameters  json.RawMessage `json:"parameters"`
-}
+type ToolDef = tooling.ToolDef
 
 func ToProviderDefs(tools []Tool) []ToolDef {
-	defs := make([]ToolDef, 0, len(tools))
-	for _, t := range tools {
-		parameters, err := json.Marshal(t.Parameters())
-		if err != nil {
-			panic(err)
-		}
-		defs = append(defs, ToolDef{
-			Name:        t.Name(),
-			Description: t.Description(),
-			Parameters:  parameters,
-		})
-	}
-	return defs
+
+	return tooling.ToProviderDefs(tools)
 }
