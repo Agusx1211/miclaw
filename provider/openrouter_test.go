@@ -17,11 +17,18 @@ import (
 )
 
 type chatRequest struct {
-	Model     string           `json:"model"`
-	Messages  []chatMessageReq `json:"messages"`
-	Tools     []chatToolReq    `json:"tools"`
-	Stream    bool             `json:"stream"`
-	MaxTokens int              `json:"max_tokens"`
+	Model           string           `json:"model"`
+	Messages        []chatMessageReq `json:"messages"`
+	Tools           []chatToolReq    `json:"tools"`
+	Stream          bool             `json:"stream"`
+	MaxTokens       int              `json:"max_tokens"`
+	MaxOutputTokens int              `json:"max_output_tokens"`
+	Store           bool             `json:"store"`
+	Reasoning       *chatReasoning   `json:"reasoning"`
+}
+
+type chatReasoning struct {
+	Effort string `json:"effort"`
 }
 
 type chatMessageReq struct {
