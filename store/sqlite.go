@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agusx1211/miclaw/agent"
+	"github.com/agusx1211/miclaw/model"
 	_ "modernc.org/sqlite"
 )
 
@@ -129,7 +129,7 @@ CREATE TABLE IF NOT EXISTS messages (
 const schemaMessagesIndex = `
 CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at)`
 
-func (s *sqliteSessionStore) Create(session *agent.Session) error {
+func (s *sqliteSessionStore) Create(session *model.Session) error {
 	must(s != nil, "session store must not be nil")
 	must(session != nil, "session must not be nil")
 
@@ -152,7 +152,7 @@ func (s *sqliteSessionStore) Create(session *agent.Session) error {
 	return err
 }
 
-func (s *sqliteSessionStore) Get(id string) (*agent.Session, error) {
+func (s *sqliteSessionStore) Get(id string) (*model.Session, error) {
 	must(s != nil, "session store must not be nil")
 	must(id != "", "session id must not be empty")
 
@@ -165,7 +165,7 @@ func (s *sqliteSessionStore) Get(id string) (*agent.Session, error) {
 	return scanSession(row)
 }
 
-func (s *sqliteSessionStore) Update(session *agent.Session) error {
+func (s *sqliteSessionStore) Update(session *model.Session) error {
 	must(s != nil, "session store must not be nil")
 	must(session != nil, "session must not be nil")
 
@@ -195,7 +195,7 @@ func (s *sqliteSessionStore) Update(session *agent.Session) error {
 	return err
 }
 
-func (s *sqliteSessionStore) List(limit, offset int) ([]*agent.Session, error) {
+func (s *sqliteSessionStore) List(limit, offset int) ([]*model.Session, error) {
 	must(s != nil, "session store must not be nil")
 	must(limit >= 0 && offset >= 0, "limit and offset must be non-negative")
 
@@ -211,7 +211,7 @@ func (s *sqliteSessionStore) List(limit, offset int) ([]*agent.Session, error) {
 	}
 	defer rows.Close()
 
-	out := make([]*agent.Session, 0)
+	out := make([]*model.Session, 0)
 	for rows.Next() {
 		v, err := scanSession(rows)
 		if err != nil {
@@ -235,7 +235,7 @@ func (s *sqliteSessionStore) Delete(id string) error {
 	return err
 }
 
-func (s *sqliteMessageStore) Create(msg *agent.Message) error {
+func (s *sqliteMessageStore) Create(msg *model.Message) error {
 	must(s != nil, "message store must not be nil")
 	must(msg != nil, "message must not be nil")
 
@@ -255,7 +255,7 @@ func (s *sqliteMessageStore) Create(msg *agent.Message) error {
 	return err
 }
 
-func (s *sqliteMessageStore) Get(id string) (*agent.Message, error) {
+func (s *sqliteMessageStore) Get(id string) (*model.Message, error) {
 	must(s != nil, "message store must not be nil")
 	must(id != "", "message id must not be empty")
 
@@ -267,7 +267,7 @@ func (s *sqliteMessageStore) Get(id string) (*agent.Message, error) {
 	return scanMessage(row)
 }
 
-func (s *sqliteMessageStore) ListBySession(sessionID string, limit, offset int) ([]*agent.Message, error) {
+func (s *sqliteMessageStore) ListBySession(sessionID string, limit, offset int) ([]*model.Message, error) {
 	must(s != nil, "message store must not be nil")
 	must(sessionID != "", "session id must not be empty")
 	must(limit >= 0 && offset >= 0, "limit and offset must be non-negative")
@@ -285,7 +285,7 @@ func (s *sqliteMessageStore) ListBySession(sessionID string, limit, offset int) 
 	}
 	defer rows.Close()
 
-	out := make([]*agent.Message, 0)
+	out := make([]*model.Message, 0)
 	for rows.Next() {
 		v, err := scanMessage(rows)
 		if err != nil {
@@ -323,7 +323,7 @@ func (s *sqliteMessageStore) CountBySession(sessionID string) (int, error) {
 	return n, nil
 }
 
-func (s *sqliteMessageStore) ReplaceSessionMessages(sessionID string, msgs []*agent.Message) error {
+func (s *sqliteMessageStore) ReplaceSessionMessages(sessionID string, msgs []*model.Message) error {
 	must(s != nil, "message store must not be nil")
 	must(sessionID != "", "session id must not be empty")
 
@@ -366,11 +366,11 @@ func (s *sqliteMessageStore) ReplaceSessionMessages(sessionID string, msgs []*ag
 	return nil
 }
 
-func scanSession(r rowScanner) (*agent.Session, error) {
+func scanSession(r rowScanner) (*model.Session, error) {
 	must(r != nil, "row scanner must not be nil")
 	must(schemaSessions != "", "session schema must not be empty")
 
-	v := &agent.Session{}
+	v := &model.Session{}
 	var createdAt string
 	var updatedAt string
 	err := r.Scan(
@@ -403,7 +403,7 @@ func scanSession(r rowScanner) (*agent.Session, error) {
 	return v, nil
 }
 
-func scanMessage(r rowScanner) (*agent.Message, error) {
+func scanMessage(r rowScanner) (*model.Message, error) {
 	must(r != nil, "row scanner must not be nil")
 	must(schemaMessages != "", "message schema must not be empty")
 
@@ -429,7 +429,7 @@ func scanMessage(r rowScanner) (*agent.Message, error) {
 	return v, nil
 }
 
-func encodeMessage(msg *agent.Message) (string, error) {
+func encodeMessage(msg *model.Message) (string, error) {
 	must(msg != nil, "message must not be nil")
 	must(msg.ID != "", "message id must not be empty")
 
@@ -442,11 +442,11 @@ func encodeMessage(msg *agent.Message) (string, error) {
 	return string(b), nil
 }
 
-func decodeMessage(raw string) (*agent.Message, error) {
+func decodeMessage(raw string) (*model.Message, error) {
 	must(raw != "", "message JSON must not be empty")
 	must(strings.TrimSpace(raw) == raw, "message JSON must be trimmed")
 
-	var v agent.Message
+	var v model.Message
 	if err := json.Unmarshal([]byte(raw), &v); err != nil {
 		return nil, err
 	}
