@@ -260,6 +260,35 @@ func TestExecSandboxReportsSSHSetupErrors(t *testing.T) {
 	}
 }
 
+func TestExecSandboxRejectsBackgroundHostCommands(t *testing.T) {
+	called := false
+	runner := newExecRunner(
+		config.SandboxConfig{Enabled: true, SSHKeyPath: "/tmp/key", HostUser: "runner"},
+		[]string{"git"},
+		"host.docker.internal",
+		func(string, string, string) (hostExecutor, error) {
+			called = true
+			return &fakeSSHExecutor{}, nil
+		},
+	)
+	got, err := runExecCallWithRunner(t, context.Background(), runner, map[string]any{
+		"command":    "git status",
+		"background": true,
+	})
+	if err != nil {
+		t.Fatalf("tool call: %v", err)
+	}
+	if !got.IsError {
+		t.Fatalf("expected error for background host command: %q", got.Content)
+	}
+	if called {
+		t.Fatal("ssh executor should not be created for unsupported background mode")
+	}
+	if !strings.Contains(got.Content, "background mode is not supported for host commands") {
+		t.Fatalf("unexpected error: %q", got.Content)
+	}
+}
+
 func runExecCall(t *testing.T, ctx context.Context, params map[string]any) (ToolResult, error) {
 	t.Helper()
 	raw, err := json.Marshal(params)

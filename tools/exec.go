@@ -106,11 +106,18 @@ func (r execRunner) run(ctx context.Context, call model.ToolCallPart) (ToolResul
 	if err != nil {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
+	if r.shouldRunOnHost(params.Command) {
+		if params.Background {
+			return asExecResult(
+				-1,
+				"failed to start command: background mode is not supported for host commands",
+				"",
+			), nil
+		}
+		return r.runExecHost(ctx, params), nil
+	}
 	if params.Background {
 		return runExecBackground(params), nil
-	}
-	if r.shouldRunOnHost(params.Command) {
-		return r.runExecHost(ctx, params), nil
 	}
 	return runExecLocal(ctx, params), nil
 }
