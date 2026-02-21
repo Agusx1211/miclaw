@@ -218,12 +218,8 @@ func startMemorySync(ctx context.Context, deps *runtimeDeps, stderr io.Writer) {
 
 func startScheduler(ctx context.Context, deps *runtimeDeps) error {
 
-	jobs, err := deps.scheduler.ListJobs()
-	if err != nil {
+	if _, err := deps.scheduler.ListJobs(); err != nil {
 		return err
-	}
-	if len(jobs) == 0 {
-		return nil
 	}
 	deps.scheduler.Start(ctx, func(sessionID, content string) {
 		deps.agent.Enqueue(agent.Input{SessionID: sessionID, Content: content, Source: agent.SourceCron})
