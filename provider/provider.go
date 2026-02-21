@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/agusx1211/miclaw/agent"
+	"github.com/agusx1211/miclaw/model"
 )
 
 type LLMProvider interface {
-	Stream(ctx context.Context, messages []agent.Message, tools []ToolDef) <-chan ProviderEvent
+	Stream(ctx context.Context, messages []model.Message, tools []ToolDef) <-chan ProviderEvent
 	Model() ModelInfo
 }
 

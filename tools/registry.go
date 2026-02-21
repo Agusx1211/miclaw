@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/agusx1211/miclaw/agent"
+	"github.com/agusx1211/miclaw/model"
 )
 
 func MainAgentTools() []Tool {
@@ -49,7 +49,7 @@ func placeholder(name, desc string, params JSONSchema) Tool {
 		name:   name,
 		desc:   desc,
 		params: params,
-		runFn: func(ctx context.Context, call agent.ToolCallPart) (ToolResult, error) {
+		runFn: func(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 			panic(fmt.Sprintf("tool not implemented: %s", name))
 		},
 	}

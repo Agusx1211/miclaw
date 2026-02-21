@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agusx1211/miclaw/agent"
+	"github.com/agusx1211/miclaw/model"
 )
 
 func openTestStore(t *testing.T) *SQLiteStore {
@@ -27,8 +27,8 @@ func openTestStore(t *testing.T) *SQLiteStore {
 	return s
 }
 
-func makeSession(id string, at time.Time) *agent.Session {
-	return &agent.Session{
+func makeSession(id string, at time.Time) *model.Session {
+	return &model.Session{
 		ID:               id,
 		ParentSessionID:  "",
 		Title:            "title-" + id,
@@ -42,13 +42,13 @@ func makeSession(id string, at time.Time) *agent.Session {
 	}
 }
 
-func makeMessage(id, sessionID, text string, at time.Time) *agent.Message {
-	return &agent.Message{
+func makeMessage(id, sessionID, text string, at time.Time) *model.Message {
+	return &model.Message{
 		ID:        id,
 		SessionID: sessionID,
-		Role:      agent.RoleUser,
-		Parts: []agent.MessagePart{
-			agent.TextPart{Text: text},
+		Role:      model.RoleUser,
+		Parts: []model.MessagePart{
+			model.TextPart{Text: text},
 		},
 		CreatedAt: at,
 	}
@@ -147,7 +147,7 @@ func TestReplaceSessionMessages(t *testing.T) {
 	if err := s.Messages.Create(makeMessage("old-1", "s1", "old", time.Date(2026, 2, 21, 13, 1, 0, 0, time.UTC))); err != nil {
 		t.Fatalf("create old message: %v", err)
 	}
-	newMsgs := []*agent.Message{
+	newMsgs := []*model.Message{
 		makeMessage("new-1", "s1", "new one", time.Date(2026, 2, 21, 13, 2, 0, 0, time.UTC)),
 		makeMessage("new-2", "s1", "new two", time.Date(2026, 2, 21, 13, 3, 0, 0, time.UTC)),
 	}
