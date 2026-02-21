@@ -11,15 +11,6 @@ import (
 	"github.com/agusx1211/miclaw/model"
 )
 
-func callTool(t *testing.T, tl Tool, params map[string]any) ToolResult {
-	t.Helper()
-	res, err := callToolRaw(t, tl, params)
-	if err != nil {
-		t.Fatalf("%s: %v", tl.Name(), err)
-	}
-	return res
-}
-
 func callToolRaw(t *testing.T, tl Tool, params map[string]any) (ToolResult, error) {
 	t.Helper()
 	raw, err := json.Marshal(params)
@@ -208,8 +199,8 @@ func TestFSLargeFileReadWithPagination(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "big.txt")
 	var b strings.Builder
-	for i := 0; i < 2000; i++ {
-		b.WriteString(fmt.Sprintf("line %d\n", i))
+	for i := range 2000 {
+		fmt.Fprintf(&b, "line %d\n", i)
 	}
 	callTool(t, writeTool(), map[string]any{
 		"path":    path,

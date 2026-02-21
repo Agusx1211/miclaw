@@ -2,10 +2,8 @@ package tools
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/agusx1211/miclaw/memory"
-	"github.com/agusx1211/miclaw/model"
 	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
 )
@@ -62,15 +60,3 @@ func SubAgentTools(store *memory.Store, embedClient *memory.EmbedClient) []Tool 
 	return tools
 }
 
-// placeholder creates a stub tool with the given name.
-func placeholder(name, desc string, params JSONSchema) Tool {
-
-	return tool{
-		name:   name,
-		desc:   desc,
-		params: params,
-		runFn: func(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-			panic(fmt.Sprintf("tool not implemented: %s", name))
-		},
-	}
-}

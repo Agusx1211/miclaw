@@ -57,7 +57,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 			return ctx.Err()
 		case env, ok := <-envCh:
 			if !ok {
-				return nil
+				return ctx.Err()
 			}
 			if IsSelfMessage(env, p.cfg.Account) {
 				continue

@@ -92,7 +92,7 @@ func TestRuntimeExecBackgroundPollComplete(t *testing.T) {
 	}
 	pid := execBackgroundPID(t, got.Content)
 	t.Cleanup(func() {
-		_, _ = callTool(t, processTool(), map[string]any{
+		callTool(t, processTool(), map[string]any{
 			"action": "signal",
 			"pid":    pid,
 			"signal": "SIGKILL",
@@ -121,7 +121,7 @@ func TestRuntimeExecBackgroundSignal(t *testing.T) {
 	}
 	pid := execBackgroundPID(t, got.Content)
 	t.Cleanup(func() {
-		_, _ = callTool(t, processTool(), map[string]any{
+		callTool(t, processTool(), map[string]any{
 			"action": "signal",
 			"pid":    pid,
 			"signal": "SIGKILL",
