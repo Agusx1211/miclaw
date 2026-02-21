@@ -328,3 +328,19 @@ func TestPipelineChunksLongResponse(t *testing.T) {
 	cancel()
 	<-done
 }
+
+func TestPipelineReturnsErrorWhenEventStreamCloses(t *testing.T) {
+	p := NewPipeline(
+		NewClient("http://127.0.0.1:1", "+1000"),
+		config.SignalConfig{Account: "+1000", DMPolicy: "open", TextChunkLimit: 100},
+		func(sessionID, content string, metadata map[string]string) {},
+		func() (<-chan Event, func()) {
+			ch := make(chan Event)
+			return ch, func() {}
+		},
+	)
+	err := p.Start(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "signal events stream closed") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

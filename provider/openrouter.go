@@ -119,7 +119,7 @@ func (o *OpenRouter) stream(ctx context.Context, messages []model.Message, tools
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		out <- errorEvent(readStatusError(resp))
+		out <- errorEvent(readStatusError("openrouter", resp))
 		return
 	}
 	for e := range parseSSEStream(resp.Body) {
@@ -252,15 +252,15 @@ func applyHeaders(req *http.Request, apiKey string) {
 
 }
 
-func readStatusError(resp *http.Response) error {
+func readStatusError(name string, resp *http.Response) error {
 
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 16*1024))
 	msg := strings.TrimSpace(string(b))
 	if msg == "" {
-		return fmt.Errorf("openrouter stream failed: status %d", resp.StatusCode)
+		return fmt.Errorf("%s stream failed: status %d", name, resp.StatusCode)
 	}
-	return fmt.Errorf("openrouter stream failed: status %d: %s", resp.StatusCode, msg)
+	return fmt.Errorf("%s stream failed: status %d: %s", name, resp.StatusCode, msg)
 }
 
 func errorEvent(err error) ProviderEvent {

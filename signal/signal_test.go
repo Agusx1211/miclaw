@@ -78,6 +78,25 @@ func TestParseEnvelopeGroupMessage(t *testing.T) {
 	}
 }
 
+func TestParseEnvelopeBare(t *testing.T) {
+	raw := `{
+		"sourceNumber": "+15551234567",
+		"sourceUuid": "abc",
+		"timestamp": 1,
+		"dataMessage": {"message": "hi"}
+	}`
+	env, err := ParseEnvelope([]byte(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if env.SourceNumber != "+15551234567" {
+		t.Fatalf("source number = %q", env.SourceNumber)
+	}
+	if env.DataMessage == nil || env.DataMessage.Message != "hi" {
+		t.Fatalf("unexpected data message: %+v", env.DataMessage)
+	}
+}
+
 func TestSessionKeyDM(t *testing.T) {
 	env := &Envelope{SourceUUID: "user-123"}
 	key := SessionKey(env)
@@ -299,13 +318,73 @@ func TestRPCSendTyping(t *testing.T) {
 }
 
 func TestSSEListener(t *testing.T) {
+	gotAccount := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAccount <- r.URL.Query().Get("account")
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher := w.(http.Flusher)
 		env := `{"envelope":{"sourceNumber":"+1","sourceUuid":"u1","timestamp":1,"dataMessage":{"message":"hi"}}}`
 		fmt.Fprintf(w, "data: %s\n\n", env)
 		flusher.Flush()
 		// Close after one event
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "+15551234567")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ch := c.Listen(ctx)
+	select {
+	case account := <-gotAccount:
+		if account != "+15551234567" {
+			t.Fatalf("account query = %q", account)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for account query")
+	}
+	select {
+	case env := <-ch:
+		if env.DataMessage == nil || env.DataMessage.Message != "hi" {
+			t.Fatalf("unexpected envelope: %+v", env)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for event")
+	}
+}
+
+func TestSSEListenerDataPrefixWithoutSpace(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		env := `{"sourceNumber":"+1","sourceUuid":"u1","timestamp":1,"dataMessage":{"message":"hi"}}`
+		fmt.Fprintf(w, "data:%s\n\n", env)
+		flusher.Flush()
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "+15551234567")
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	ch := c.Listen(ctx)
+	select {
+	case env := <-ch:
+		if env.DataMessage == nil || env.DataMessage.Message != "hi" {
+			t.Fatalf("unexpected envelope: %+v", env)
+		}
+	case <-ctx.Done():
+		t.Fatal("timeout waiting for event")
+	}
+}
+
+func TestSSEListenerMultilineData(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher := w.(http.Flusher)
+		fmt.Fprint(w, "data: {\"sourceNumber\":\"+1\",\n")
+		fmt.Fprint(w, "data: \"sourceUuid\":\"u1\",\"timestamp\":1,\"dataMessage\":{\"message\":\"hi\"}}\n\n")
+		flusher.Flush()
 	}))
 	defer srv.Close()
 

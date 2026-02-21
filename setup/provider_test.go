@@ -19,3 +19,17 @@ func TestChooseNetworkModeCustom(t *testing.T) {
 		t.Fatalf("mode = %q", got)
 	}
 }
+
+func TestPickBaseURLDoesNotReuseOtherBackendDefault(t *testing.T) {
+	got := pickBaseURL("codex", "openrouter", "https://openrouter.ai/api/v1")
+	if got != "https://api.openai.com/v1" {
+		t.Fatalf("base url = %q", got)
+	}
+}
+
+func TestPickBaseURLKeepsCurrentWhenBackendUnchanged(t *testing.T) {
+	got := pickBaseURL("codex", "codex", "https://proxy.internal/v1")
+	if got != "https://proxy.internal/v1" {
+		t.Fatalf("base url = %q", got)
+	}
+}

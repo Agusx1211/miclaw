@@ -180,6 +180,77 @@ func TestParseSSEMultipleToolCalls(t *testing.T) {
 	}
 }
 
+func TestParseSSEResponsesContentAndUsage(t *testing.T) {
+	s := strings.Join([]string{
+		`data: {"type":"response.output_text.delta","delta":"Hel"}`,
+		`data: {"type":"response.output_text.delta","delta":"lo"}`,
+		`data: {"type":"response.completed","response":{"usage":{"input_tokens":10,"output_tokens":3,"input_tokens_details":{"cached_tokens":2},"output_tokens_details":{"reasoning_tokens":1}}}}`,
+		"",
+	}, "\n")
+	e := collectEvents(t, s)
+	if len(e) != 3 {
+		t.Fatalf("expected 3 events, got %d", len(e))
+	}
+	if e[0].Type != EventContentDelta || e[0].Delta != "Hel" {
+		t.Fatalf("unexpected first event: %#v", e[0])
+	}
+	if e[1].Type != EventContentDelta || e[1].Delta != "lo" {
+		t.Fatalf("unexpected second event: %#v", e[1])
+	}
+	if e[2].Type != EventComplete {
+		t.Fatalf("unexpected complete event: %#v", e[2])
+	}
+	if e[2].Usage == nil {
+		t.Fatal("expected usage info")
+	}
+	if e[2].Usage.PromptTokens != 10 || e[2].Usage.CompletionTokens != 3 {
+		t.Fatalf("unexpected usage tokens: %#v", e[2].Usage)
+	}
+	if e[2].Usage.CacheReadTokens != 2 || e[2].Usage.CacheWriteTokens != 1 {
+		t.Fatalf("unexpected usage details: %#v", e[2].Usage)
+	}
+}
+
+func TestParseSSEResponsesToolCallStream(t *testing.T) {
+	s := strings.Join([]string{
+		`data: {"type":"response.output_item.added","item":{"id":"it_1","type":"function_call","call_id":"call_1","name":"read"}}`,
+		`data: {"type":"response.function_call_arguments.delta","item_id":"it_1","delta":"{\"path\":\"/tmp/a\"}"}`,
+		`data: {"type":"response.output_item.done","item":{"id":"it_1","type":"function_call","call_id":"call_1","name":"read"}}`,
+		`data: {"type":"response.completed","response":{}}`,
+		"",
+	}, "\n")
+	e := collectEvents(t, s)
+	if len(e) != 4 {
+		t.Fatalf("expected 4 events, got %d", len(e))
+	}
+	if e[0].Type != EventToolUseStart || e[0].ToolCallID != "call_1" || e[0].ToolName != "read" {
+		t.Fatalf("unexpected start event: %#v", e[0])
+	}
+	if e[1].Type != EventToolUseDelta || e[1].ToolCallID != "call_1" || e[1].Delta != `{"path":"/tmp/a"}` {
+		t.Fatalf("unexpected delta event: %#v", e[1])
+	}
+	if e[2].Type != EventToolUseStop || e[2].ToolCallID != "call_1" {
+		t.Fatalf("unexpected stop event: %#v", e[2])
+	}
+	if e[3].Type != EventComplete {
+		t.Fatalf("unexpected complete event: %#v", e[3])
+	}
+}
+
+func TestParseSSEResponsesFailed(t *testing.T) {
+	s := strings.Join([]string{
+		`data: {"type":"response.failed","response":{"error":{"message":"boom"}}}`,
+		"",
+	}, "\n")
+	e := collectEvents(t, s)
+	if len(e) != 1 {
+		t.Fatalf("expected 1 event, got %d", len(e))
+	}
+	if e[0].Type != EventError || e[0].Error == nil || e[0].Error.Error() != "boom" {
+		t.Fatalf("unexpected error event: %#v", e[0])
+	}
+}
+
 func TestRetryOn429(t *testing.T) {
 	n := 0
 	ctx := context.Background()

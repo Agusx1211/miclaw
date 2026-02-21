@@ -77,7 +77,7 @@ Pick one backend:
   "provider": {
     "backend": "codex",
     "api_key": "sk-...",
-    "model": "gpt-5.2",
+    "model": "gpt-5.3-codex",
     "thinking_effort": "medium"
   }
 }

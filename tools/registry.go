@@ -34,7 +34,6 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		execToolWithSandbox(deps.Sandbox),
 		processTool(),
 		CronTool(deps.Scheduler),
-		messageTool(deps.SendMessage),
 		agentsListTool(deps.Model, deps.IsActive),
 		sessionsListTool(deps.Sessions),
 		sessionsHistoryTool(deps.Sessions, deps.Messages),
@@ -44,6 +43,9 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		MemorySearchTool(deps.Memory, deps.Embed),
 		MemoryGetTool(deps.Memory),
 		subagentsTool(),
+	}
+	if deps.SendMessage != nil {
+		tools = append(tools, messageTool(deps.SendMessage))
 	}
 
 	return tools

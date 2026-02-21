@@ -13,12 +13,13 @@ import (
 
 func configureProvider(u *ui, p *config.ProviderConfig) error {
 	u.section("Provider")
+	prevBackend := p.Backend
 	backend, err := u.chooseOne("Provider backend", []string{"lmstudio", "openrouter", "codex"}, p.Backend)
 	if err != nil {
 		return err
 	}
 	p.Backend = backend
-	base, err := u.askString("Provider base URL", pickBaseURL(backend, p.BaseURL))
+	base, err := u.askString("Provider base URL", pickBaseURL(backend, prevBackend, p.BaseURL))
 	if err != nil {
 		return err
 	}
@@ -224,7 +225,13 @@ func codexAuthMode(apiKey string) string {
 	return "api_key"
 }
 
-func pickBaseURL(backend, current string) string {
+func pickBaseURL(backend, prevBackend, current string) string {
+	if backend != prevBackend {
+		def := provider.DefaultBaseURL(backend)
+		if def != "" {
+			return def
+		}
+	}
 	if current != "" {
 		return current
 	}

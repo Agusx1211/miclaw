@@ -67,7 +67,7 @@ func (l *LMStudio) stream(ctx context.Context, messages []model.Message, tools [
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		out <- errorEvent(readStatusError(resp))
+		out <- errorEvent(readStatusError("lmstudio", resp))
 		return
 	}
 	for e := range parseSSEStream(resp.Body) {

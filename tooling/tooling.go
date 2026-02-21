@@ -23,6 +23,35 @@ type JSONSchema struct {
 	Desc       string                `json:"description,omitempty"`
 }
 
+func (s JSONSchema) MarshalJSON() ([]byte, error) {
+	m := map[string]any{}
+	if s.Type != "" {
+		m["type"] = s.Type
+	}
+	if s.Type == "object" {
+		if s.Properties == nil {
+			m["properties"] = map[string]JSONSchema{}
+		} else {
+			m["properties"] = s.Properties
+		}
+	} else if len(s.Properties) > 0 {
+		m["properties"] = s.Properties
+	}
+	if len(s.Required) > 0 {
+		m["required"] = s.Required
+	}
+	if s.Items != nil {
+		m["items"] = s.Items
+	}
+	if len(s.Enum) > 0 {
+		m["enum"] = s.Enum
+	}
+	if s.Desc != "" {
+		m["description"] = s.Desc
+	}
+	return json.Marshal(m)
+}
+
 type ToolResult struct {
 	Content string
 	IsError bool

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -83,7 +84,85 @@ func ParseEnvelope(data []byte) (*Envelope, error) {
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return nil, err
 	}
-	return &wrapper.Envelope, nil
+	if wrapper.Envelope.SourceNumber != "" || wrapper.Envelope.SourceUUID != "" || wrapper.Envelope.DataMessage != nil {
+		return &wrapper.Envelope, nil
+	}
+	var env Envelope
+	if err := json.Unmarshal(data, &env); err != nil {
+		return nil, err
+	}
+	if env.SourceNumber == "" && env.SourceUUID == "" && env.DataMessage == nil {
+		return nil, fmt.Errorf("invalid envelope payload")
+	}
+	return &env, nil
+}
+
+func (c *Client) eventsURL() string {
+	q := url.Values{}
+	q.Set("account", c.account)
+	return c.baseURL + "/api/v1/events?" + q.Encode()
+}
+
+func sseData(line string) (string, bool) {
+	if !strings.HasPrefix(line, "data:") {
+		return "", false
+	}
+	data := strings.TrimPrefix(line, "data:")
+	return strings.TrimPrefix(data, " "), true
+}
+
+func (c *Client) Listen(ctx context.Context) <-chan *Envelope {
+	out := make(chan *Envelope, 16)
+	go c.listenSSE(ctx, out)
+	return out
+}
+
+func (c *Client) listenSSE(ctx context.Context, out chan<- *Envelope) {
+	defer close(out)
+	req, err := http.NewRequestWithContext(ctx, "GET", c.eventsURL(), nil)
+	if err != nil {
+		return
+	}
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+
+	deliver := func(data string) bool {
+		env, err := ParseEnvelope([]byte(data))
+		if err != nil {
+			return false
+		}
+		select {
+		case out <- env:
+			return true
+		case <-ctx.Done():
+			return false
+		}
+	}
+	scanner := bufio.NewScanner(resp.Body)
+	var dataParts []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if line == "" {
+			if len(dataParts) > 0 {
+				if !deliver(strings.Join(dataParts, "\n")) {
+					return
+				}
+				dataParts = dataParts[:0]
+			}
+			continue
+		}
+		data, ok := sseData(line)
+		if !ok {
+			continue
+		}
+		dataParts = append(dataParts, data)
+	}
+	if len(dataParts) > 0 {
+		deliver(strings.Join(dataParts, "\n"))
+	}
 }
 
 func SessionKey(env *Envelope) string {
@@ -265,42 +344,4 @@ func (c *Client) SendTyping(ctx context.Context, recipient string) error {
 		"recipient": []string{recipient},
 		"account":   c.account,
 	})
-}
-
-func (c *Client) Listen(ctx context.Context) <-chan *Envelope {
-	out := make(chan *Envelope, 16)
-	go c.listenSSE(ctx, out)
-	return out
-}
-
-func (c *Client) listenSSE(ctx context.Context, out chan<- *Envelope) {
-	defer close(out)
-	url := c.baseURL + "/api/v1/events?account=" + c.account
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
-	if err != nil {
-		return
-	}
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return
-	}
-	defer resp.Body.Close()
-
-	scanner := bufio.NewScanner(resp.Body)
-	for scanner.Scan() {
-		line := scanner.Text()
-		if !strings.HasPrefix(line, "data: ") {
-			continue
-		}
-		data := strings.TrimPrefix(line, "data: ")
-		env, err := ParseEnvelope([]byte(data))
-		if err != nil {
-			continue
-		}
-		select {
-		case out <- env:
-		case <-ctx.Done():
-			return
-		}
-	}
 }

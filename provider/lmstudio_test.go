@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/agusx1211/miclaw/config"
@@ -135,5 +136,24 @@ func TestLMStudioModel(t *testing.T) {
 	}
 	if m.CostPerInputToken != 0 || m.CostPerOutputToken != 0 {
 		t.Fatalf("expected zero costs, got %#v", m)
+	}
+}
+
+func TestLMStudioStreamStatusErrorPrefix(t *testing.T) {
+	c := &streamCapture{}
+	srv := lmStudioServer(t, c, func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, "bad request")
+	})
+	defer srv.Close()
+
+	p := lmStudioProvider(srv.URL, "lmstudio")
+	msgs := []model.Message{{Role: model.RoleUser, Parts: []model.MessagePart{model.TextPart{Text: "ping"}}}}
+	ev := collectProviderEvents(t, p.Stream(context.Background(), msgs, nil))
+	if len(ev) != 1 || ev[0].Type != EventError || ev[0].Error == nil {
+		t.Fatalf("unexpected events: %#v", ev)
+	}
+	if !strings.Contains(ev[0].Error.Error(), "lmstudio stream failed") {
+		t.Fatalf("unexpected error: %v", ev[0].Error)
 	}
 }

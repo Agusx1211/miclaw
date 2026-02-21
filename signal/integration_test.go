@@ -426,6 +426,54 @@ func TestSignalAccessControl(t *testing.T) {
 	}
 }
 
+func TestSignalAccessControlByPhoneNumber(t *testing.T) {
+	mock := newSignalMock(t)
+	defer mock.close()
+	inbox := make(chan inboundCapture, 2)
+	cfg := defaultSignalConfig()
+	cfg.DMPolicy = "allowlist"
+	cfg.Allowlist = []string{"+1111"}
+
+	p := NewPipeline(
+		NewClient(mock.url(), "+5678"),
+		cfg,
+		func(sessionID, content string, metadata map[string]string) {
+			inbox <- inboundCapture{sessionID: sessionID, content: content, metadata: metadata}
+		},
+		func() (<-chan Event, func()) { return make(chan Event), func() {} },
+	)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := startPipeline(ctx, p)
+	mock.emit(Envelope{
+		SourceNumber: "+9999",
+		SourceUUID:   "allowed-uuid",
+		DataMessage:  &DataMessage{Message: "block"},
+	})
+	mock.emit(Envelope{
+		SourceNumber: "+1111",
+		SourceUUID:   "other-uuid",
+		DataMessage:  &DataMessage{Message: "allow"},
+	})
+
+	var got inboundCapture
+	select {
+	case got = <-inbox:
+	case <-time.After(500 * time.Millisecond):
+		cancel()
+		assertContextCanceled(t, done)
+		t.Fatal("timed out waiting for enqueue")
+	}
+	cancel()
+	assertContextCanceled(t, done)
+	if got.sessionID != "signal:dm:other-uuid" {
+		t.Fatalf("sessionID = %q", got.sessionID)
+	}
+	if got.content != "allow" {
+		t.Fatalf("content = %q", got.content)
+	}
+}
+
 func TestSignalTypingIndicator(t *testing.T) {
 	mock := newSignalMock(t)
 	defer mock.close()

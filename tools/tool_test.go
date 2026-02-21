@@ -51,6 +51,20 @@ func TestSubAgentToolsReturns6Tools(t *testing.T) {
 	}
 }
 
+func TestMainAgentToolsOmitsMessageWhenSendUnavailable(t *testing.T) {
+	deps := mainDeps()
+	deps.SendMessage = nil
+	got := MainAgentTools(deps)
+	for _, g := range got {
+		if g.Name() == "message" {
+			t.Fatal("unexpected message tool")
+		}
+	}
+	if len(got) != 19 {
+		t.Fatalf("want 19 tools, got %d", len(got))
+	}
+}
+
 func TestSubAgentToolsAreSubsetOfMainTools(t *testing.T) {
 	mainTools := MainAgentTools(mainDeps())
 	subTools := SubAgentTools(nil, nil)
@@ -102,5 +116,20 @@ func TestJSONSchemaMarshal(t *testing.T) {
 	}
 	if !reflect.DeepEqual(raw, got) {
 		t.Fatalf("round trip mismatch: %#v != %#v", raw, got)
+	}
+}
+
+func TestJSONSchemaObjectIncludesEmptyProperties(t *testing.T) {
+	raw := JSONSchema{Type: "object"}
+	b, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if _, ok := got["properties"]; !ok {
+		t.Fatalf("missing properties in object schema: %s", string(b))
 	}
 }

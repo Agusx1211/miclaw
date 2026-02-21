@@ -144,6 +144,9 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureRuntimePaths(cfg); err != nil {
+		return nil, err
+	}
 	sqlStore, memStore, embedClient, err := openStores(cfg)
 	if err != nil {
 		return nil, err
@@ -196,6 +199,10 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		scheduler:   scheduler,
 		agent:       ag,
 	}, nil
+}
+
+func ensureRuntimePaths(cfg *config.Config) error {
+	return os.MkdirAll(cfg.Workspace, 0o755)
 }
 
 func openStores(cfg *config.Config) (*store.SQLiteStore, *memory.Store, *memory.EmbedClient, error) {
@@ -291,14 +298,23 @@ func subscribeSignalEvents(ag *agent.Agent) (<-chan signalpipe.Event, func()) {
 	go func() {
 		defer close(out)
 		for ev := range events {
-			if ev.Type != agent.EventResponse || ev.Message == nil || !strings.HasPrefix(ev.SessionID, "signal:") {
+			if !strings.HasPrefix(ev.SessionID, "signal:") {
 				continue
 			}
-			text := messageText(ev.Message)
-			if text == "" {
+			if ev.Type == agent.EventResponse {
+				if ev.Message == nil {
+					continue
+				}
+				text := messageText(ev.Message)
+				if text == "" {
+					continue
+				}
+				out <- signalpipe.Event{SessionID: ev.SessionID, Text: text}
 				continue
 			}
-			out <- signalpipe.Event{SessionID: ev.SessionID, Text: text}
+			if ev.Type == agent.EventError && ev.Error != nil {
+				out <- signalpipe.Event{SessionID: ev.SessionID, Text: "Error: " + ev.Error.Error()}
+			}
 		}
 	}()
 	return out, unsubscribe

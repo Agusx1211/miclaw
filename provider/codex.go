@@ -12,10 +12,13 @@ import (
 )
 
 const codexDefaultBaseURL = "https://api.openai.com/v1"
+const codexChatGPTBaseURL = "https://chatgpt.com/backend-api/codex"
 
 type Codex struct {
 	baseURL        string
 	apiKey         string
+	chatgptAccount string
+	useResponses   bool
 	model          string
 	maxTokens      int
 	thinkingEffort string
@@ -39,7 +42,19 @@ type codexReasoning struct {
 
 func NewCodex(cfg config.ProviderConfig) *Codex {
 
+	accountID := chatgptAccountID(cfg.APIKey)
 	base := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
+	if base == "" {
+		if accountID != "" {
+			base = codexChatGPTBaseURL
+		} else {
+			base = codexDefaultBaseURL
+		}
+	}
+	if accountID != "" && strings.HasPrefix(base, codexDefaultBaseURL) {
+		base = codexChatGPTBaseURL
+	}
+	useResponses := strings.Contains(base, "/backend-api/codex")
 	if base == "" {
 		base = codexDefaultBaseURL
 	}
@@ -50,6 +65,8 @@ func NewCodex(cfg config.ProviderConfig) *Codex {
 	p := &Codex{
 		baseURL:        base,
 		apiKey:         cfg.APIKey,
+		chatgptAccount: accountID,
+		useResponses:   useResponses,
 		model:          cfg.Model,
 		maxTokens:      maxTokens,
 		thinkingEffort: strings.TrimSpace(cfg.ThinkingEffort),
@@ -82,23 +99,32 @@ func (c *Codex) Stream(ctx context.Context, messages []model.Message, tools []To
 func (c *Codex) stream(ctx context.Context, messages []model.Message, tools []ToolDef, out chan<- ProviderEvent) {
 
 	defer close(out)
-	payload, err := marshalCodexRequest(c.model, c.maxTokens, c.thinkingEffort, c.store, messages, tools)
+	payload, path, err := c.marshalRequest(messages, tools)
 	if err != nil {
 		out <- errorEvent(err)
 		return
 	}
-	resp, err := c.post(ctx, payload)
+	resp, err := c.postPath(ctx, path, payload)
 	if err != nil {
 		out <- errorEvent(err)
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
-		out <- errorEvent(readStatusError(resp))
+		out <- errorEvent(readStatusError("codex", resp))
 		return
 	}
 	for e := range parseSSEStream(resp.Body) {
 		out <- normalizeCodexToolCallID(e)
 	}
+}
+
+func (c *Codex) marshalRequest(messages []model.Message, tools []ToolDef) ([]byte, string, error) {
+	if c.useResponses {
+		payload, err := marshalCodexResponsesRequest(c.model, c.thinkingEffort, messages, tools)
+		return payload, "/responses", err
+	}
+	payload, err := marshalCodexRequest(c.model, c.maxTokens, c.thinkingEffort, c.store, messages, tools)
+	return payload, "/chat/completions", err
 }
 
 func marshalCodexRequest(modelID string, maxTokens int, effort string, store bool, messages []model.Message, tools []ToolDef) ([]byte, error) {
@@ -118,17 +144,17 @@ func marshalCodexRequest(modelID string, maxTokens int, effort string, store boo
 	return json.Marshal(body)
 }
 
-func (c *Codex) post(ctx context.Context, payload []byte) (*http.Response, error) {
+func (c *Codex) postPath(ctx context.Context, path string, payload []byte) (*http.Response, error) {
 
 	return withRetry(ctx, 0, func() (*http.Response, error) {
 
-		return c.doPost(ctx, payload)
+		return c.doPostPath(ctx, path, payload)
 	})
 }
 
-func (c *Codex) doPost(ctx context.Context, payload []byte) (*http.Response, error) {
+func (c *Codex) doPostPath(ctx context.Context, path string, payload []byte) (*http.Response, error) {
 
-	u := c.baseURL + "/chat/completions"
+	u := c.baseURL + path
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, bytes.NewReader(payload))
 	if err != nil {
 		return nil, err
@@ -136,6 +162,10 @@ func (c *Codex) doPost(ctx context.Context, payload []byte) (*http.Response, err
 	req.Header.Set("Authorization", "Bearer "+c.apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "text/event-stream")
+	if c.chatgptAccount != "" {
+		req.Header.Set("ChatGPT-Account-ID", c.chatgptAccount)
+		req.Header.Set("originator", "codex_cli_rs")
+	}
 	r, err := c.client.Do(req)
 	if err != nil {
 		return nil, err

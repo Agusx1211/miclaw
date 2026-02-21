@@ -2,6 +2,8 @@ package signal
 
 import (
 	"context"
+	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -57,7 +59,10 @@ func (p *Pipeline) Start(ctx context.Context) error {
 			return ctx.Err()
 		case env, ok := <-envCh:
 			if !ok {
-				return ctx.Err()
+				if err := ctx.Err(); err != nil {
+					return err
+				}
+				return fmt.Errorf("signal events stream closed")
 			}
 			if IsSelfMessage(env, p.cfg.Account) {
 				continue
@@ -65,13 +70,7 @@ func (p *Pipeline) Start(ctx context.Context) error {
 			if env.DataMessage == nil {
 				continue
 			}
-			policy := p.cfg.DMPolicy
-			subject := env.SourceUUID
-			if env.DataMessage.GroupInfo != nil {
-				policy = p.cfg.GroupPolicy
-				subject = env.DataMessage.GroupInfo.GroupID
-			}
-			if !CheckAccess(policy, p.cfg.Allowlist, subject) {
+			if !allowSignalAccess(p.cfg, env) {
 				continue
 			}
 			p.startTyping(ctx, SessionKey(env), typing)
@@ -90,6 +89,16 @@ func (p *Pipeline) Start(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+func allowSignalAccess(cfg config.SignalConfig, env *Envelope) bool {
+	if env.DataMessage.GroupInfo != nil {
+		return CheckAccess(cfg.GroupPolicy, cfg.Allowlist, env.DataMessage.GroupInfo.GroupID)
+	}
+	if cfg.DMPolicy != "allowlist" {
+		return CheckAccess(cfg.DMPolicy, cfg.Allowlist, "")
+	}
+	return slices.Contains(cfg.Allowlist, env.SourceNumber) || slices.Contains(cfg.Allowlist, env.SourceUUID)
 }
 
 func (p *Pipeline) sendResponse(ctx context.Context, ev Event, typing map[string]context.CancelFunc) error {
