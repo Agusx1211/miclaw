@@ -35,6 +35,33 @@ Testing is how we ensure correctness. Not defensive code, not type gymnastics â€
 - **Suspected edge cases must be replicated before handling.** Do not add handling for a theoretical edge case. Write a test that triggers it. If you can't trigger it, it doesn't exist. Move on.
 - **Aim for hundreds of tests.** Correctness comes from test coverage, not from defensive code. More tests, fewer guards.
 
+## Naming Conventions
+
+- **Short names for short scopes.** Single-letter variables (`i`, `n`, `b`) are fine in loops and small functions. The smaller the scope, the shorter the name.
+- **Descriptive names for exported symbols.** Exported functions, types, and constants get clear names. `ParseBlock`, not `PB`. `ValidateSignature`, not `ValSig`.
+- **No stuttering.** A type in package `block` is `block.Header`, not `block.BlockHeader`. A function in package `tx` is `tx.Decode`, not `tx.DecodeTx`.
+- **No Hungarian notation.** No `strName`, `nCount`, `bValid`. The type system handles this.
+- **Acronyms are all-caps or all-lower.** `HTTPClient`, `txID`, `rpcURL`. Not `HttpClient`, `txId`, `rpcUrl`.
+- **Test functions describe the scenario.** `TestDecodeRejectsEmptyInput`, not `TestDecode1`. The name should tell you what broke when the test fails.
+- **Receivers are one or two letters.** `func (b *Block) Hash()`, not `func (block *Block) Hash()` or `func (self *Block) Hash()`.
+- **Package names are single lowercase words.** `block`, `tx`, `codec`. Not `blockutils`, `txHelper`, `codec_v2`.
+- **Files are lowercase, underscored.** `block_header.go`, `tx_decode_test.go`. No camelCase filenames.
+- **Constants are PascalCase if exported, camelCase if not.** `MaxBlockSize`, `defaultTimeout`. No `ALL_CAPS_SCREAMING`.
+
+## Dead Code Policy
+
+Dead code is not "there if we need it later." Dead code is a liability. Delete it.
+
+- **Never leave commented-out code.** If code is commented out, delete it. Git remembers everything; you don't need to.
+- **Delete unused functions immediately.** If a refactor makes a function unreachable, delete it in the same commit. Do not leave it "for later."
+- **Delete unused parameters.** If a function parameter is no longer read, remove it and update all callers.
+- **Delete unused struct fields.** If a field is never set or never read, remove it.
+- **Delete unused imports.** The compiler enforces this in Go, but also watch for imports only used by commented-out code.
+- **Delete unused test helpers.** Test utilities rot just like production code. If no test calls it, delete it.
+- **Delete stale TODO comments.** A TODO with no associated work is just noise. Either do the work now or delete the comment.
+- **No "just in case" code.** If it's not called today, it shouldn't exist today. Re-creating a function from scratch when you actually need it takes less time than maintaining zombie code you might never use.
+- **Every PR/commit should have a net-zero or negative line count trend.** Adding a feature should not leave behind orphaned code from the previous approach. Clean up after yourself in the same change.
+
 ## What NOT To Do
 
 - Do not add error wrapping layers. Return errors directly.

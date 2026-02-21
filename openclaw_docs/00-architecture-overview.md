@@ -138,6 +138,47 @@ The summarization prompt requests 7 sections: Goals, Timeline, Technical Decisio
 
 **Note:** No separate heartbeat system exists. The only keepalive mechanism is HTTP client timeouts (720s default).
 
+### 7. LM Studio Integration
+**Document:** [07-lm-studio-integration.md](./07-lm-studio-integration.md)
+
+LM Studio is treated as an OpenAI-compatible HTTP API provider:
+
+- **Protocol:** Standard OpenAI chat completions API at `http://127.0.0.1:1234/v1`
+- **Auth:** Dummy API key (LM Studio doesn't enforce auth)
+- **Model discovery:** Manual only (no auto-discovery unlike Ollama/vLLM)
+- **Streaming:** Standard SSE, handled by pi-ai library's OpenAI provider
+- **Tool calling:** Supported, depends on local model capability
+- **Hybrid configs:** Can be used as primary or fallback alongside cloud providers via `mode: "merge"`
+- **Transcript policy:** Lighter sanitization (images-only) like other OpenAI-compatible providers
+
+### 8. OpenAI & Codex Integration
+**Document:** [08-openai-codex-integration.md](./08-openai-codex-integration.md)
+
+Two access modes for OpenAI models:
+
+- **API Key** (`openai/gpt-5.1-codex`): Direct API access with usage-based billing
+- **Codex OAuth** (`openai-codex/gpt-5.3-codex`): ChatGPT subscription sign-in via OAuth
+- **Extended thinking:** Supports `off` through `xhigh` thinking levels; Codex models support maximum reasoning budgets
+- **Apply patch tool:** OpenAI-specific tool for code changes using `*** Begin Patch/End Patch` format
+- **Tool call IDs:** Dual-format `call_id|fc_id` that must be preserved exactly
+- **Streaming:** OpenAI Responses API with custom event types and `store: true` injection
+- **Schema normalization:** Requires `type: "object"` at root level; `anyOf` schemas merged
+- **Gateway endpoint:** OpenClaw exposes its own `/v1/chat/completions` endpoint so external tools can use it as an OpenAI-compatible proxy
+
+### 9. OpenRouter Integration
+**Document:** [09-openrouter-integration.md](./09-openrouter-integration.md)
+
+OpenRouter is a multi-model proxy accessed through an OpenAI-compatible API:
+
+- **Base URL:** `https://openrouter.ai/api/v1` with `sk-or-*` API keys
+- **Model format:** `openrouter/<provider>/<model>` (e.g., `openrouter/anthropic/claude-sonnet-4-5`)
+- **Auto-routing:** `openrouter/auto` lets OpenRouter pick the best model
+- **Model discovery:** Auto-discovered from `/api/v1/models` with free model filtering
+- **Attribution headers:** `HTTP-Referer: https://openclaw.ai` and `X-Title: OpenClaw` injected automatically
+- **Transcript policy:** Varies by underlying model -- Gemini models get strict sanitization, others get light (images-only)
+- **Web search fallback:** `OPENROUTER_API_KEY` can proxy Perplexity web search
+- **Tool calling:** Full support, proxied to underlying model
+
 ## Data Flow: Complete Request Lifecycle
 
 ```
