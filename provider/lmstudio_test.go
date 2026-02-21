@@ -22,21 +22,17 @@ func lmStudioServer(t *testing.T, capture *streamCapture, fn func(http.ResponseW
 		if r.URL.Path != "/chat/completions" {
 			t.Fatalf("unexpected path: %s", r.URL.Path)
 		}
-		body, err := readBody(r)
+		b, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Fatalf("read body: %v", err)
 		}
 		var req chatRequest
-		if err := json.Unmarshal(body, &req); err != nil {
+		if err := json.Unmarshal(b, &req); err != nil {
 			t.Fatalf("decode body: %v", err)
 		}
 		capture.push(r, req)
 		fn(w, r)
 	}))
-}
-
-func readBody(r *http.Request) ([]byte, error) {
-	return io.ReadAll(r.Body)
 }
 
 func lmStudioProvider(baseURL, apiKey string) *LMStudio {
