@@ -5,9 +5,17 @@ import (
 	"fmt"
 
 	"github.com/agusx1211/miclaw/model"
+	"github.com/agusx1211/miclaw/store"
 )
 
-func MainAgentTools() []Tool {
+type MainToolDeps struct {
+	Sessions store.SessionStore
+	Messages store.MessageStore
+	Model    string
+	IsActive func() bool
+}
+
+func MainAgentTools(deps MainToolDeps) []Tool {
 	tools := []Tool{
 		ReadTool(),
 		writeTool(),
@@ -20,12 +28,12 @@ func MainAgentTools() []Tool {
 		placeholder("process", "placeholder process tool", JSONSchema{Type: "object"}),
 		placeholder("cron", "placeholder cron tool", JSONSchema{Type: "object"}),
 		placeholder("message", "placeholder message tool", JSONSchema{Type: "object"}),
-		placeholder("agents_list", "placeholder agents_list tool", JSONSchema{Type: "object"}),
-		placeholder("sessions_list", "placeholder sessions_list tool", JSONSchema{Type: "object"}),
-		placeholder("sessions_history", "placeholder sessions_history tool", JSONSchema{Type: "object"}),
-		placeholder("sessions_send", "placeholder sessions_send tool", JSONSchema{Type: "object"}),
+		agentsListTool(deps.Model, deps.IsActive),
+		sessionsListTool(deps.Sessions),
+		sessionsHistoryTool(deps.Sessions, deps.Messages),
+		sessionsSendTool(deps.Sessions, deps.Messages),
 		placeholder("sessions_spawn", "placeholder sessions_spawn tool", JSONSchema{Type: "object"}),
-		placeholder("sessions_status", "placeholder sessions_status tool", JSONSchema{Type: "object"}),
+		sessionsStatusTool(deps.Sessions, deps.Messages),
 		placeholder("memory_search", "placeholder memory_search tool", JSONSchema{Type: "object"}),
 		placeholder("memory_get", "placeholder memory_get tool", JSONSchema{Type: "object"}),
 		placeholder("subagents", "placeholder subagents tool", JSONSchema{Type: "object"}),
