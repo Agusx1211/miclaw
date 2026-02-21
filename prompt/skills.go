@@ -25,46 +25,20 @@ func LoadSkills(workspacePath string) ([]SkillSummary, error) {
 		panic("workspace path is required")
 	}
 
-	pattern := filepath.Join(workspacePath, "skills", "*", "SKILL.md")
-	paths, err := filepath.Glob(pattern)
+	paths, err := filepath.Glob(filepath.Join(workspacePath, "skills", "*", "SKILL.md"))
 	if err != nil {
 		return nil, err
-	}
-	if len(paths) == 0 {
-		return []SkillSummary{}, nil
 	}
 
 	summaries := make([]SkillSummary, 0, len(paths))
 	for _, p := range paths {
-		info, err := os.Stat(p)
+		s, ok, err := parseSkillFile(p, workspacePath)
 		if err != nil {
-			return nil, fmt.Errorf("stat skill file %s: %w", p, err)
+			return nil, err
 		}
-		if info.Size() > maxSkillMarkdownBytes {
-			continue
+		if ok {
+			summaries = append(summaries, s)
 		}
-
-		content, err := os.ReadFile(p)
-		if err != nil {
-			return nil, fmt.Errorf("read skill file %s: %w", p, err)
-		}
-
-		metadata, _ := ParseFrontmatter(string(content))
-		name := strings.TrimSpace(metadata["name"])
-		if name == "" {
-			name = filepath.Base(filepath.Dir(p))
-		}
-
-		rel, err := filepath.Rel(workspacePath, p)
-		if err != nil {
-			return nil, fmt.Errorf("rel path %s: %w", p, err)
-		}
-
-		summaries = append(summaries, SkillSummary{
-			Name:        name,
-			Description: strings.TrimSpace(metadata["description"]),
-			Path:        filepath.ToSlash(rel),
-		})
 	}
 
 	sort.Slice(summaries, func(i, j int) bool {
@@ -74,31 +48,64 @@ func LoadSkills(workspacePath string) ([]SkillSummary, error) {
 		summaries = summaries[:maxSkills]
 	}
 
-	remaining := maxSkillSummaryBytes
-	for i, summary := range summaries {
-		remaining -= len(summary.Name)
-		if remaining < 0 {
-			panic("skill summary name overflow")
-		}
-
-		if remaining >= len(summary.Description) {
-			remaining -= len(summary.Description)
-			continue
-		}
-
-		if remaining <= 0 {
-			summaries[i].Description = ""
-			continue
-		}
-		summaries[i].Description = summary.Description[:remaining]
-		remaining = 0
-	}
+	truncateSummaries(summaries)
 
 	if !sort.SliceIsSorted(summaries, func(i, j int) bool {
 		return summaries[i].Name < summaries[j].Name
 	}) {
 		panic("skills not sorted by name")
 	}
-
 	return summaries, nil
+}
+
+func parseSkillFile(path, base string) (SkillSummary, bool, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return SkillSummary{}, false, fmt.Errorf("stat skill file %s: %w", path, err)
+	}
+	if info.Size() > maxSkillMarkdownBytes {
+		return SkillSummary{}, false, nil
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return SkillSummary{}, false, fmt.Errorf("read skill file %s: %w", path, err)
+	}
+
+	metadata, _ := ParseFrontmatter(string(content))
+	name := strings.TrimSpace(metadata["name"])
+	if name == "" {
+		name = filepath.Base(filepath.Dir(path))
+	}
+
+	rel, err := filepath.Rel(base, path)
+	if err != nil {
+		return SkillSummary{}, false, fmt.Errorf("rel path %s: %w", path, err)
+	}
+
+	return SkillSummary{
+		Name:        name,
+		Description: strings.TrimSpace(metadata["description"]),
+		Path:        filepath.ToSlash(rel),
+	}, true, nil
+}
+
+func truncateSummaries(summaries []SkillSummary) {
+	remaining := maxSkillSummaryBytes
+	for i, s := range summaries {
+		remaining -= len(s.Name)
+		if remaining < 0 {
+			panic("skill summary name overflow")
+		}
+		if remaining >= len(s.Description) {
+			remaining -= len(s.Description)
+			continue
+		}
+		if remaining <= 0 {
+			summaries[i].Description = ""
+			continue
+		}
+		summaries[i].Description = s.Description[:remaining]
+		remaining = 0
+	}
 }
