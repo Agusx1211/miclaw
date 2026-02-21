@@ -11,13 +11,14 @@ import (
 )
 
 type MainToolDeps struct {
-	Sessions store.SessionStore
-	Messages store.MessageStore
-	Provider provider.LLMProvider
-	Memory   *memory.Store
-	Embed    *memory.EmbedClient
-	Model    string
-	IsActive func() bool
+	Sessions  store.SessionStore
+	Messages  store.MessageStore
+	Provider  provider.LLMProvider
+	Memory    *memory.Store
+	Embed     *memory.EmbedClient
+	Scheduler *Scheduler
+	Model     string
+	IsActive  func() bool
 }
 
 func MainAgentTools(deps MainToolDeps) []Tool {
@@ -31,7 +32,7 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		lsTool(),
 		execTool(),
 		placeholder("process", "placeholder process tool", JSONSchema{Type: "object"}),
-		placeholder("cron", "placeholder cron tool", JSONSchema{Type: "object"}),
+		CronTool(deps.Scheduler),
 		placeholder("message", "placeholder message tool", JSONSchema{Type: "object"}),
 		agentsListTool(deps.Model, deps.IsActive),
 		sessionsListTool(deps.Sessions),
