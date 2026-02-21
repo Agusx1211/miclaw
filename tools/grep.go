@@ -73,7 +73,37 @@ func runGrep(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 	}
 	var out []string
 	var got int
-	walkErr := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+	walkErr := filepath.WalkDir(root, grepWalkFunc(params, root, re, ignorePatterns, &out, &got))
+	if errors.Is(walkErr, errGrepResultLimit) {
+		walkErr = nil
+	}
+	if walkErr != nil {
+		return ToolResult{Content: walkErr.Error(), IsError: true}, nil
+	}
+	return ToolResult{Content: strings.Join(out, "\n"), IsError: false}, nil
+}
+
+func parseGrepParams(raw json.RawMessage) (grepParams, error) {
+
+	var params grepParams
+	if err := json.Unmarshal(raw, &params); err != nil {
+		return grepParams{}, err
+	}
+
+	if params.Path == "" {
+		params.Path = "."
+	}
+	if params.ContextLines < 0 {
+		return grepParams{}, fmt.Errorf("context_lines must be non-negative")
+	}
+	if params.MaxResults <= 0 {
+		params.MaxResults = 100
+	}
+	return params, nil
+}
+
+func grepWalkFunc(params grepParams, root string, re *regexp.Regexp, ignorePatterns []string, out *[]string, got *int) fs.WalkDirFunc {
+	return func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -101,40 +131,14 @@ func runGrep(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 			return err
 		}
 		for _, line := range matches {
-			if got >= params.MaxResults {
+			if *got >= params.MaxResults {
 				return errGrepResultLimit
 			}
-			out = append(out, line)
-			got++
+			*out = append(*out, line)
+			*got++
 		}
 		return nil
-	})
-	if errors.Is(walkErr, errGrepResultLimit) {
-		walkErr = nil
 	}
-	if walkErr != nil {
-		return ToolResult{Content: walkErr.Error(), IsError: true}, nil
-	}
-	return ToolResult{Content: strings.Join(out, "\n"), IsError: false}, nil
-}
-
-func parseGrepParams(raw json.RawMessage) (grepParams, error) {
-
-	var params grepParams
-	if err := json.Unmarshal(raw, &params); err != nil {
-		return grepParams{}, err
-	}
-
-	if params.Path == "" {
-		params.Path = "."
-	}
-	if params.ContextLines < 0 {
-		return grepParams{}, fmt.Errorf("context_lines must be non-negative")
-	}
-	if params.MaxResults <= 0 {
-		params.MaxResults = 100
-	}
-	return params, nil
 }
 
 func searchMatchesInFile(relPath, absPath string, re *regexp.Regexp, contextLines int) ([]string, error) {
