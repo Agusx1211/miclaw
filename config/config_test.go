@@ -262,3 +262,41 @@ func TestLoadExpandsTildePaths(t *testing.T) {
 		t.Fatalf("unexpected state_path expansion: %q", c.StatePath)
 	}
 }
+
+func TestLoadAcceptsValidThinkingEffort(t *testing.T) {
+	p := writeConfigFile(t, `{
+		"provider": {
+			"backend": "codex",
+			"api_key": "sk-test",
+			"model": "codex-mini-latest",
+			"thinking_effort": "medium"
+		}
+	}`)
+
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if c.Provider.ThinkingEffort != "medium" {
+		t.Fatalf("unexpected thinking_effort: %q", c.Provider.ThinkingEffort)
+	}
+}
+
+func TestLoadRejectsInvalidThinkingEffort(t *testing.T) {
+	p := writeConfigFile(t, `{
+		"provider": {
+			"backend": "codex",
+			"api_key": "sk-test",
+			"model": "codex-mini-latest",
+			"thinking_effort": "extreme"
+		}
+	}`)
+
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("expected invalid thinking_effort error")
+	}
+	if !strings.Contains(err.Error(), "provider.thinking_effort") {
+		t.Fatalf("expected provider.thinking_effort error, got: %v", err)
+	}
+}

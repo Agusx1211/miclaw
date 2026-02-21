@@ -224,6 +224,7 @@ func validate(c Config) error {
 
 func validateProvider(p ProviderConfig) error {
 	v := map[string]bool{"lmstudio": true, "openrouter": true, "codex": true}
+	e := map[string]bool{"low": true, "medium": true, "high": true}
 
 	if !v[p.Backend] {
 		return fmt.Errorf("provider.backend must be one of lmstudio, openrouter, codex")
@@ -239,6 +240,9 @@ func validateProvider(p ProviderConfig) error {
 	}
 	if (p.Backend == "openrouter" || p.Backend == "codex") && p.APIKey == "" {
 		return fmt.Errorf("provider.api_key is required for backend %q", p.Backend)
+	}
+	if p.ThinkingEffort != "" && !e[p.ThinkingEffort] {
+		return fmt.Errorf("provider.thinking_effort must be one of low, medium, high")
 	}
 	return nil
 }

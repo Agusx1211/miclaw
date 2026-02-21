@@ -12,11 +12,13 @@ type Config struct {
 }
 
 type ProviderConfig struct {
-	Backend   string `json:"backend"`
-	BaseURL   string `json:"base_url"`
-	APIKey    string `json:"api_key"`
-	Model     string `json:"model"`
-	MaxTokens int    `json:"max_tokens"`
+	Backend        string `json:"backend"`
+	BaseURL        string `json:"base_url"`
+	APIKey         string `json:"api_key"`
+	Model          string `json:"model"`
+	MaxTokens      int    `json:"max_tokens"`
+	ThinkingEffort string `json:"thinking_effort"`
+	Store          bool   `json:"store"`
 }
 
 type SignalConfig struct {

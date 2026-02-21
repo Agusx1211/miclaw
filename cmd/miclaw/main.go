@@ -127,6 +127,8 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		prov = provider.NewOpenRouter(cfg.Provider)
 	case "lmstudio":
 		prov = provider.NewLMStudio(cfg.Provider)
+	case "codex":
+		prov = provider.NewCodex(cfg.Provider)
 	default:
 		log.Fatalf("unsupported provider backend %q", cfg.Provider.Backend)
 	}
