@@ -56,7 +56,6 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	defer closeRuntime(deps, stderr)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -73,20 +72,20 @@ func run(args []string, stdout, stderr io.Writer) error {
 	fmt.Fprintf(stderr, "%s\n", versionString())
 	fmt.Fprintf(stderr, "workspace=%s state=%s backend=%s model=%s\n", deps.cfg.Workspace, deps.cfg.StatePath, deps.cfg.Provider.Backend, deps.cfg.Provider.Model)
 
-	sigCh := make(chan os.Signal, 1)
+	sigCh := make(chan os.Signal, 2)
 	osSignal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	defer osSignal.Stop(sigCh)
 	select {
 	case sig := <-sigCh:
 		fmt.Fprintf(stderr, "received %s, shutting down\n", sig.String())
+		stopForced := watchSecondSignal(sigCh, stderr)
+		shutdown(deps, cancel, &wg, stderr)
+		stopForced()
+		return nil
 	case err := <-errCh:
-		cancel()
-		wg.Wait()
+		shutdown(deps, cancel, &wg, stderr)
 		return err
 	}
-	cancel()
-	wg.Wait()
-	return nil
 }
 
 func parseFlags(args []string) (string, bool, error) {
@@ -194,22 +193,6 @@ func loadPromptData(workspacePath string) (*prompt.Workspace, []prompt.SkillSumm
 		return nil, nil, err
 	}
 	return workspace, skills, nil
-}
-
-func closeRuntime(deps *runtimeDeps, stderr io.Writer) {
-
-	deps.scheduler.Stop()
-	if err := deps.scheduler.Close(); err != nil {
-		fmt.Fprintf(stderr, "scheduler close error: %v\n", err)
-	}
-	if deps.memStore != nil {
-		if err := deps.memStore.Close(); err != nil {
-			fmt.Fprintf(stderr, "memory close error: %v\n", err)
-		}
-	}
-	if err := deps.sqlStore.Close(); err != nil {
-		fmt.Fprintf(stderr, "store close error: %v\n", err)
-	}
 }
 
 func startMemorySync(ctx context.Context, deps *runtimeDeps, stderr io.Writer) {
