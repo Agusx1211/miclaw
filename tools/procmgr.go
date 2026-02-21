@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -22,6 +23,7 @@ type managedProc struct {
 	startTime time.Time
 	done      chan struct{}
 	exitCode  int
+	finished  bool
 }
 
 type procOutputWriter struct {
@@ -34,12 +36,12 @@ func NewProcManager() *ProcManager {
 }
 
 func (m *ProcManager) Start(cmd *exec.Cmd) int {
+	m.reap()
 	proc := &managedProc{
 		cmd:       cmd,
 		output:    &bytes.Buffer{},
 		startTime: time.Now(),
 		done:      make(chan struct{}),
-		exitCode:  -1,
 	}
 	out := &procOutputWriter{mgr: m, proc: proc}
 	cmd.Stdout = out
@@ -65,18 +67,21 @@ func (m *ProcManager) Status(pid int) (bool, int, string, error) {
 	if !ok {
 		return false, 0, "", fmt.Errorf("process %d not found", pid)
 	}
-
-	return proc.exitCode == -1, proc.exitCode, proc.output.String(), nil
+	return !proc.finished, proc.exitCode, proc.output.String(), nil
 }
 
 func (m *ProcManager) Signal(pid int, sig os.Signal) error {
 	m.mu.Lock()
-	proc, ok := m.procs[pid]
+	_, ok := m.procs[pid]
 	m.mu.Unlock()
 	if !ok {
 		return fmt.Errorf("process %d not found", pid)
 	}
-	return proc.cmd.Process.Signal(sig)
+	s, ok := sig.(syscall.Signal)
+	if !ok {
+		return fmt.Errorf("unsupported signal type")
+	}
+	return syscall.Kill(-pid, s)
 }
 
 func (m *ProcManager) Poll(pid int) (string, error) {
@@ -93,7 +98,18 @@ func (m *ProcManager) wait(pid int) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	proc.exitCode = proc.cmd.ProcessState.ExitCode()
+	proc.finished = true
 	close(proc.done)
+}
+
+func (m *ProcManager) reap() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for pid, proc := range m.procs {
+		if proc.finished {
+			delete(m.procs, pid)
+		}
+	}
 }
 
 func (m *ProcManager) getProc(pid int) (*managedProc, bool) {

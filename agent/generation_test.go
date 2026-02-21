@@ -85,6 +85,30 @@ func (t *echoTool) Calls() []model.ToolCallPart {
 	return append([]model.ToolCallPart(nil), t.calls...)
 }
 
+type cancellationTool struct {
+	started chan struct{}
+}
+
+func (t *cancellationTool) Name() string { return "slow" }
+
+func (t *cancellationTool) Description() string { return "slow tool" }
+
+func (t *cancellationTool) Parameters() tools.JSONSchema {
+	return tools.JSONSchema{Type: "object"}
+}
+
+func (t *cancellationTool) Run(ctx context.Context, call model.ToolCallPart) (tools.ToolResult, error) {
+	if call.ID == "call1" {
+		return tools.ToolResult{Content: "first", IsError: false}, nil
+	}
+	if call.ID == "call2" {
+		close(t.started)
+		<-ctx.Done()
+		return tools.ToolResult{}, ctx.Err()
+	}
+	return tools.ToolResult{Content: "third", IsError: false}, nil
+}
+
 func openAgentStore(t *testing.T) *store.SQLiteStore {
 	t.Helper()
 	p := filepath.Join(t.TempDir(), "agent.db")
@@ -108,6 +132,20 @@ func waitEvent(t *testing.T, ch <-chan AgentEvent) AgentEvent {
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for event")
 		return AgentEvent{}
+	}
+}
+
+func waitInactive(t *testing.T, a *Agent) {
+	t.Helper()
+	deadline := time.After(time.Second)
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for a.IsActive() {
+		select {
+		case <-deadline:
+			t.Fatal("timed out waiting for inactive agent")
+		case <-tick.C:
+		}
 	}
 }
 
@@ -305,5 +343,85 @@ func TestStreamAndHandleAccumulatesContent(t *testing.T) {
 	text := stored[0].Parts[0].(model.TextPart)
 	if text.Text != "abc" {
 		t.Fatalf("unexpected merged text: %#v", text)
+	}
+}
+
+func TestEnqueueProcessesAllInputsFIFO(t *testing.T) {
+	s := openAgentStore(t)
+	p := &scriptedProvider{
+		streams: []streamScript{
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "one"},
+				provider.ProviderEvent{Type: provider.EventComplete},
+			),
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "two"},
+				provider.ProviderEvent{Type: provider.EventComplete},
+			),
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "three"},
+				provider.ProviderEvent{Type: provider.EventComplete},
+			),
+		},
+	}
+	a := NewAgent(s.SessionStore(), s.MessageStore(), nil, p)
+	evCh, unsub := a.Events().Subscribe()
+	defer unsub()
+	inputs := []Input{
+		{SessionID: "s1", Content: "first", Source: SourceAPI},
+		{SessionID: "s2", Content: "second", Source: SourceAPI},
+		{SessionID: "s3", Content: "third", Source: SourceAPI},
+	}
+	for _, in := range inputs {
+		a.Enqueue(in)
+	}
+	for i, sessionID := range []string{"s1", "s2", "s3"} {
+		ev := waitEvent(t, evCh)
+		if ev.Type != EventResponse {
+			t.Fatalf("event %d type = %q", i, ev.Type)
+		}
+		if ev.SessionID != sessionID {
+			t.Fatalf("event %d session = %q", i, ev.SessionID)
+		}
+	}
+	if p.CallCount() != 3 {
+		t.Fatalf("expected 3 provider calls, got %d", p.CallCount())
+	}
+	waitInactive(t, a)
+}
+
+func TestRunToolsCancellationMarksRemaining(t *testing.T) {
+	tool := &cancellationTool{started: make(chan struct{})}
+	calls := []ToolCallPart{
+		{ID: "call1", Name: "slow"},
+		{ID: "call2", Name: "slow"},
+		{ID: "call3", Name: "slow"},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	go func() {
+		<-tool.started
+		cancel()
+	}()
+	msg, err := runTools(ctx, "s1", []tools.Tool{tool}, calls)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("expected context canceled, got %v", err)
+	}
+	if msg == nil {
+		t.Fatal("expected non-nil tool message")
+	}
+	if len(msg.Parts) != 3 {
+		t.Fatalf("expected 3 parts, got %d", len(msg.Parts))
+	}
+	p1 := msg.Parts[0].(model.ToolResultPart)
+	if p1.ToolCallID != "call1" || p1.Content != "first" || p1.IsError {
+		t.Fatalf("unexpected first part: %#v", p1)
+	}
+	p2 := msg.Parts[1].(model.ToolResultPart)
+	if p2.ToolCallID != "call2" || p2.Content != "Cancelled" || !p2.IsError {
+		t.Fatalf("unexpected second part: %#v", p2)
+	}
+	p3 := msg.Parts[2].(model.ToolResultPart)
+	if p3.ToolCallID != "call3" || p3.Content != "Cancelled" || !p3.IsError {
+		t.Fatalf("unexpected third part: %#v", p3)
 	}
 }

@@ -23,9 +23,6 @@ type toolCallState struct {
 }
 
 func (a *Agent) processGeneration(ctx context.Context, input Input) error {
-	a.active.Store(true)
-	defer a.active.Store(false)
-
 	session, err := a.getOrCreateSession(input.SessionID)
 	if err != nil {
 		return err
@@ -120,10 +117,12 @@ func (a *Agent) streamAndHandle(ctx context.Context, session *Session, messages 
 	}
 
 	toolMsg, err := runTools(ctx, session.ID, toolList, calls)
-	if err != nil {
-		return false, err
+	if toolMsg != nil {
+		if err := a.messages.Create(toolMsg); err != nil {
+			return false, err
+		}
 	}
-	if err := a.messages.Create(toolMsg); err != nil {
+	if err != nil {
 		return false, err
 	}
 	return true, nil
@@ -220,15 +219,35 @@ func buildAssistantParts(text, reasoning string, calls []ToolCallPart) []Message
 func runTools(ctx context.Context, sessionID string, toolList []tools.Tool, calls []ToolCallPart) (*Message, error) {
 
 	parts := make([]MessagePart, 0, len(calls))
-	for _, call := range calls {
+	for i, call := range calls {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			parts = appendCancelled(parts, calls[i:])
+			return newToolMessage(sessionID, parts), err
 		}
 		result := runTool(ctx, toolList, call)
+		if err := ctx.Err(); err != nil {
+			parts = append(parts, cancelledPart(call))
+			parts = appendCancelled(parts, calls[i+1:])
+			return newToolMessage(sessionID, parts), err
+		}
 		parts = append(parts, result)
 	}
-	msg := &Message{ID: uuid.NewString(), SessionID: sessionID, Role: RoleTool, Parts: parts, CreatedAt: time.Now().UTC()}
-	return msg, nil
+	return newToolMessage(sessionID, parts), nil
+}
+
+func appendCancelled(parts []MessagePart, calls []ToolCallPart) []MessagePart {
+	for _, call := range calls {
+		parts = append(parts, cancelledPart(call))
+	}
+	return parts
+}
+
+func cancelledPart(call ToolCallPart) ToolResultPart {
+	return ToolResultPart{ToolCallID: call.ID, Content: "Cancelled", IsError: true}
+}
+
+func newToolMessage(sessionID string, parts []MessagePart) *Message {
+	return &Message{ID: uuid.NewString(), SessionID: sessionID, Role: RoleTool, Parts: parts, CreatedAt: time.Now().UTC()}
 }
 
 func runTool(ctx context.Context, toolList []tools.Tool, call ToolCallPart) ToolResultPart {

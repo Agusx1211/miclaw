@@ -65,7 +65,7 @@ func (a *Agent) Enqueue(input Input) {
 	a.cancel = cancel
 	a.active.Store(true)
 	a.mu.Unlock()
-	go a.awaitCancellation(ctx, runID)
+	go a.processQueue(ctx, runID)
 }
 
 func (a *Agent) Cancel() {
@@ -91,14 +91,25 @@ func (a *Agent) Events() *Broker[AgentEvent] {
 	return a.eventBroker
 }
 
-func (a *Agent) awaitCancellation(ctx context.Context, runID uint64) {
-
-	<-ctx.Done()
-	a.mu.Lock()
-	if a.runID.Load() == runID {
-		a.cancel = nil
-		a.active.Store(false)
+func (a *Agent) processQueue(ctx context.Context, runID uint64) {
+	defer func() {
+		a.mu.Lock()
+		if a.runID.Load() == runID {
+			a.cancel = nil
+			a.active.Store(false)
+		}
+		a.mu.Unlock()
+	}()
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		input, ok := a.queue.Pop()
+		if !ok {
+			return
+		}
+		if err := a.processGeneration(ctx, input); err != nil {
+			a.eventBroker.Publish(AgentEvent{Type: EventError, SessionID: input.SessionID, Error: err})
+		}
 	}
-	a.mu.Unlock()
-
 }
