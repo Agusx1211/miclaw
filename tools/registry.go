@@ -31,7 +31,7 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		globTool(),
 		lsTool(),
 		execTool(),
-		placeholder("process", "placeholder process tool", JSONSchema{Type: "object"}),
+		processTool(),
 		CronTool(deps.Scheduler),
 		placeholder("message", "placeholder message tool", JSONSchema{Type: "object"}),
 		agentsListTool(deps.Model, deps.IsActive),
