@@ -20,6 +20,7 @@ import (
 	"github.com/agusx1211/miclaw/memory"
 	"github.com/agusx1211/miclaw/prompt"
 	"github.com/agusx1211/miclaw/provider"
+	"github.com/agusx1211/miclaw/setup"
 	signalpipe "github.com/agusx1211/miclaw/signal"
 	"github.com/agusx1211/miclaw/store"
 	"github.com/agusx1211/miclaw/tools"
@@ -35,6 +36,12 @@ type runtimeDeps struct {
 	agent       *agent.Agent
 }
 
+type cliFlags struct {
+	configPath  string
+	showVersion bool
+	setup       bool
+}
+
 func main() {
 
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
@@ -44,17 +51,35 @@ func main() {
 
 func run(args []string, stdout, stderr io.Writer) error {
 
-	configPath, showVersion, err := parseFlags(args)
+	flags, err := parseFlags(args)
 	if err != nil {
 		return err
 	}
-	if showVersion {
+	if flags.showVersion {
 		fmt.Fprintln(stdout, versionString())
 		return nil
 	}
-	deps, err := initRuntime(configPath)
+	configPath, err := expandHome(flags.configPath)
 	if err != nil {
 		return err
+	}
+	if flags.setup {
+		return setup.Run(configPath, os.Stdin, stdout)
+	}
+
+	deps, err := initRuntime(configPath)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) || !stdinIsTTY() {
+			return err
+		}
+		fmt.Fprintf(stderr, "config not found at %s, starting setup\n", configPath)
+		if err := setup.Run(configPath, os.Stdin, stdout); err != nil {
+			return err
+		}
+		deps, err = initRuntime(configPath)
+		if err != nil {
+			return err
+		}
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -88,19 +113,25 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 }
 
-func parseFlags(args []string) (string, bool, error) {
+func parseFlags(args []string) (cliFlags, error) {
 
 	fs := flag.NewFlagSet("miclaw", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	configPath := fs.String("config", "~/.miclaw/config.json", "path to config file")
 	showVersion := fs.Bool("version", false, "print version and exit")
+	setupRun := fs.Bool("setup", false, "run setup/configuration TUI and exit")
+	configureRun := fs.Bool("configure", false, "run setup/configuration TUI and exit")
 	if err := fs.Parse(args); err != nil {
-		return "", false, err
+		return cliFlags{}, err
 	}
 	if fs.NArg() != 0 {
-		return "", false, fmt.Errorf("unexpected positional arguments")
+		return cliFlags{}, fmt.Errorf("unexpected positional arguments")
 	}
-	return *configPath, *showVersion, nil
+	return cliFlags{
+		configPath:  *configPath,
+		showVersion: *showVersion,
+		setup:       *setupRun || *configureRun,
+	}, nil
 }
 
 func initRuntime(configPath string) (*runtimeDeps, error) {
@@ -362,4 +393,12 @@ func expandHome(path string) (string, error) {
 		return filepath.Join(home, path[2:]), nil
 	}
 	return "", fmt.Errorf("unsupported home path %q", path)
+}
+
+func stdinIsTTY() bool {
+	info, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (info.Mode() & os.ModeCharDevice) != 0
 }

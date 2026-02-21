@@ -36,15 +36,42 @@ func TestVersionFlag(t *testing.T) {
 func TestConfigFlagParsing(t *testing.T) {
 	t.Parallel()
 
-	path, showVersion, err := parseFlags([]string{"--config", "/tmp/custom.json"})
+	flags, err := parseFlags([]string{"--config", "/tmp/custom.json"})
 	if err != nil {
 		t.Fatalf("parse flags: %v", err)
 	}
-	if path != "/tmp/custom.json" {
-		t.Fatalf("config path = %q", path)
+	if flags.configPath != "/tmp/custom.json" {
+		t.Fatalf("config path = %q", flags.configPath)
 	}
-	if showVersion {
+	if flags.showVersion {
 		t.Fatalf("showVersion = true")
+	}
+	if flags.setup {
+		t.Fatalf("setup = true")
+	}
+}
+
+func TestSetupFlagParsing(t *testing.T) {
+	t.Parallel()
+
+	flags, err := parseFlags([]string{"--setup"})
+	if err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if !flags.setup {
+		t.Fatal("setup = false")
+	}
+}
+
+func TestConfigureFlagParsing(t *testing.T) {
+	t.Parallel()
+
+	flags, err := parseFlags([]string{"--configure"})
+	if err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if !flags.setup {
+		t.Fatal("setup = false")
 	}
 }
 
