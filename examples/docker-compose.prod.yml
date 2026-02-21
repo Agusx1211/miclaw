@@ -1,0 +1,32 @@
+services:
+  miclaw:
+    build:
+      context: ../
+    network_mode: bridge
+    restart: unless-stopped
+    volumes:
+      - ./workspace:/workspace:rw
+      - ./config-cloud.json:/workspace/config.json:ro
+    environment:
+      MICLAW_CONFIG_PATH: /workspace/config.json
+    command: ["-config", "/workspace/config.json"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  signal-cli:
+    image: bbernhard/signal-cli-rest-api:latest
+    network_mode: service:miclaw
+    restart: unless-stopped
+    volumes:
+      - signal-data:/home/.local/share/signal-cli
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f signal-cli >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  signal-data:

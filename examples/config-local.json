@@ -1,0 +1,8 @@
+{
+  "provider": {
+    "backend": "lmstudio",
+    "model": "your-model-name-here"
+  },
+  "workspace": "~/.miclaw/workspace",
+  "state_path": "~/.miclaw/state"
+}

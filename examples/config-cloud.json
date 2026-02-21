@@ -1,0 +1,32 @@
+{
+  "provider": {
+    "backend": "openrouter",
+    "api_key": "YOUR_OPENROUTER_API_KEY",
+    "model": "google/gemini-2.0-flash-001"
+  },
+  "signal": {
+    "enabled": true,
+    "account": "+1234567890",
+    "dm_policy": "allowlist",
+    "allowlist": ["+1555000001"]
+  },
+  "webhook": {
+    "enabled": true,
+    "hooks": [
+      {
+        "id": "github",
+        "path": "/webhook/github",
+        "secret": "YOUR_WEBHOOK_SECRET",
+        "format": "json"
+      }
+    ]
+  },
+  "memory": {
+    "enabled": true,
+    "embedding_url": "https://openrouter.ai/api/v1",
+    "embedding_api_key": "YOUR_OPENROUTER_API_KEY",
+    "embedding_model": "openai/text-embedding-3-small"
+  },
+  "workspace": "~/.miclaw/workspace",
+  "state_path": "~/.miclaw/state"
+}
