@@ -111,39 +111,7 @@ func addCronField(raw string, min, max int, out map[int]struct{}) error {
 		return nil
 	}
 	if strings.Contains(raw, "/") {
-		parts := strings.Split(raw, "/")
-		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-			return fmt.Errorf("invalid cron field")
-		}
-		step, err := strconv.Atoi(parts[1])
-		if err != nil || step <= 0 {
-			return fmt.Errorf("invalid cron step")
-		}
-		start := min
-		end := max
-		if parts[0] != "*" {
-			if strings.Contains(parts[0], "-") {
-				lo, hi, err := parseCronRange(parts[0], min, max)
-				if err != nil {
-					return err
-				}
-				start, end = lo, hi
-			} else {
-				rawValue, err := strconv.Atoi(parts[0])
-				if err != nil {
-					return fmt.Errorf("invalid cron field value")
-				}
-				if rawValue < min || rawValue > max {
-					return fmt.Errorf("invalid cron field value")
-				}
-				start = rawValue
-				end = rawValue
-			}
-		}
-		for i := start; i <= end; i += step {
-			out[i] = struct{}{}
-		}
-		return nil
+		return addCronStep(raw, min, max, out)
 	}
 	if strings.Contains(raw, "-") {
 		lo, hi, err := parseCronRange(raw, min, max)
@@ -163,6 +131,42 @@ func addCronField(raw string, min, max int, out map[int]struct{}) error {
 		return fmt.Errorf("invalid cron field value")
 	}
 	out[value] = struct{}{}
+	return nil
+}
+
+func addCronStep(raw string, min, max int, out map[int]struct{}) error {
+	parts := strings.Split(raw, "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return fmt.Errorf("invalid cron field")
+	}
+	step, err := strconv.Atoi(parts[1])
+	if err != nil || step <= 0 {
+		return fmt.Errorf("invalid cron step")
+	}
+	start := min
+	end := max
+	if parts[0] != "*" {
+		if strings.Contains(parts[0], "-") {
+			lo, hi, err := parseCronRange(parts[0], min, max)
+			if err != nil {
+				return err
+			}
+			start, end = lo, hi
+		} else {
+			rawValue, err := strconv.Atoi(parts[0])
+			if err != nil {
+				return fmt.Errorf("invalid cron field value")
+			}
+			if rawValue < min || rawValue > max {
+				return fmt.Errorf("invalid cron field value")
+			}
+			start = rawValue
+			end = rawValue
+		}
+	}
+	for i := start; i <= end; i += step {
+		out[i] = struct{}{}
+	}
 	return nil
 }
 

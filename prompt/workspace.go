@@ -53,8 +53,29 @@ func LoadWorkspace(path string) (*Workspace, error) {
 		*file.dst = string(content)
 	}
 
-	total := len(w.Soul) + len(w.Agents) + len(w.Identity) + len(w.User) + len(w.Memory) + len(w.Heartbeat)
-	for total > maxWorkspaceTotalChars {
+	truncateWorkspaceToLimit(files, maxWorkspaceTotalChars)
+
+	for i := range files {
+		if len(*files[i].dst) <= maxWorkspaceFileChars {
+			continue
+		}
+		*files[i].dst = Truncate(*files[i].dst, maxWorkspaceFileChars)
+	}
+	if len(w.Soul)+len(w.Agents)+len(w.Identity)+len(w.User)+len(w.Memory)+len(w.Heartbeat) > maxWorkspaceTotalChars {
+		panic("workspace total exceeds limit")
+	}
+	return w, nil
+}
+
+func truncateWorkspaceToLimit(files []struct {
+	name string
+	dst  *string
+}, limit int) {
+	total := 0
+	for _, file := range files {
+		total += len(*file.dst)
+	}
+	for total > limit {
 		largest := 0
 		for i := 1; i < len(files); i++ {
 			if len(*files[i].dst) > len(*files[largest].dst) {
@@ -72,24 +93,13 @@ func LoadWorkspace(path string) (*Workspace, error) {
 		} else {
 			*files[largest].dst = Truncate(*files[largest].dst, target)
 		}
-
-		next := len(w.Soul) + len(w.Agents) + len(w.Identity) + len(w.User) + len(w.Memory) + len(w.Heartbeat)
+		next := 0
+		for _, file := range files {
+			next += len(*file.dst)
+		}
 		if next >= total {
 			panic("workspace total truncation stalled")
 		}
 		total = next
 	}
-
-	for i := range files {
-		if len(*files[i].dst) <= maxWorkspaceFileChars {
-			continue
-		}
-		*files[i].dst = Truncate(*files[i].dst, maxWorkspaceFileChars)
-	}
-	total = len(w.Soul) + len(w.Agents) + len(w.Identity) + len(w.User) + len(w.Memory) + len(w.Heartbeat)
-
-	if total > maxWorkspaceTotalChars {
-		panic("workspace total exceeds limit")
-	}
-	return w, nil
 }
