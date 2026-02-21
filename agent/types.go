@@ -134,58 +134,40 @@ func (m *Message) UnmarshalJSON(b []byte) error {
 }
 
 func marshalPart(p MessagePart) (json.RawMessage, error) {
+	typ := p.partTag()
 	switch v := p.(type) {
-	case TextPart:
-		return encodePart(v, v.partTag())
-	case ReasoningPart:
-		return encodePart(v, v.partTag())
-	case ToolCallPart:
-		return encodePart(v, v.partTag())
-	case ToolResultPart:
-		return encodePart(v, v.partTag())
-	case FinishPart:
-		return encodePart(v, v.partTag())
-	case BinaryPart:
-		return encodePart(v, v.partTag())
-	}
-	return nil, fmt.Errorf("unknown message part: %T", p)
-}
-
-func encodePart(part any, typ string) (json.RawMessage, error) {
-	switch v := part.(type) {
 	case TextPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			TextPart
-		}{Type: typ, TextPart: v})
+		}{typ, v})
 	case ReasoningPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			ReasoningPart
-		}{Type: typ, ReasoningPart: v})
+		}{typ, v})
 	case ToolCallPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			ToolCallPart
-		}{Type: typ, ToolCallPart: v})
+		}{typ, v})
 	case ToolResultPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			ToolResultPart
-		}{Type: typ, ToolResultPart: v})
+		}{typ, v})
 	case FinishPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			FinishPart
-		}{Type: typ, FinishPart: v})
+		}{typ, v})
 	case BinaryPart:
 		return json.Marshal(struct {
 			Type string `json:"type"`
 			BinaryPart
-		}{Type: typ, BinaryPart: v})
-	default:
-		return nil, fmt.Errorf("unknown message part: %T", part)
+		}{typ, v})
 	}
+	panic(fmt.Sprintf("unknown message part type: %T", p))
 }
 
 type partType struct {
