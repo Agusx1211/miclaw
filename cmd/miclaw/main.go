@@ -121,10 +121,15 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.Provider.Backend != "openrouter" {
+	var prov provider.LLMProvider
+	switch cfg.Provider.Backend {
+	case "openrouter":
+		prov = provider.NewOpenRouter(cfg.Provider)
+	case "lmstudio":
+		prov = provider.NewLMStudio(cfg.Provider)
+	default:
 		log.Fatalf("unsupported provider backend %q", cfg.Provider.Backend)
 	}
-	prov := provider.NewOpenRouter(cfg.Provider)
 	scheduler, err := tools.NewScheduler(filepath.Join(cfg.StatePath, "cron.sqlite"))
 	if err != nil {
 		return nil, err
