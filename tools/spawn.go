@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/agusx1211/miclaw/agent"
+	"github.com/agusx1211/miclaw/memory"
 	"github.com/agusx1211/miclaw/model"
 	"github.com/agusx1211/miclaw/provider"
 	"github.com/agusx1211/miclaw/store"
@@ -39,15 +40,30 @@ type subagentRegistry struct {
 
 var activeSubagents = newSubagentRegistry()
 
-func sessionsSpawnTool(sessions store.SessionStore, messages store.MessageStore, prov provider.LLMProvider) Tool {
+func sessionsSpawnTool(
+	sessions store.SessionStore,
+	messages store.MessageStore,
+	prov provider.LLMProvider,
+	memStore *memory.Store,
+	embedClient *memory.EmbedClient,
+) Tool {
 
-	return sessionsSpawnToolWithTimeout(sessions, messages, prov, sessionsSpawnTimeout)
+	return sessionsSpawnToolWithTimeout(
+		sessions,
+		messages,
+		prov,
+		memStore,
+		embedClient,
+		sessionsSpawnTimeout,
+	)
 }
 
 func sessionsSpawnToolWithTimeout(
 	sessions store.SessionStore,
 	messages store.MessageStore,
 	prov provider.LLMProvider,
+	memStore *memory.Store,
+	embedClient *memory.EmbedClient,
 	timeout time.Duration,
 ) Tool {
 	return tool{
@@ -62,7 +78,7 @@ func sessionsSpawnToolWithTimeout(
 			},
 		},
 		runFn: func(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-			return runSessionsSpawn(ctx, sessions, messages, prov, call, timeout)
+			return runSessionsSpawn(ctx, sessions, messages, prov, memStore, embedClient, call, timeout)
 		},
 	}
 }
@@ -88,6 +104,8 @@ func runSessionsSpawn(
 	sessions store.SessionStore,
 	messages store.MessageStore,
 	prov provider.LLMProvider,
+	memStore *memory.Store,
+	embedClient *memory.EmbedClient,
 	call model.ToolCallPart,
 	timeout time.Duration,
 ) (ToolResult, error) {
@@ -106,7 +124,7 @@ func runSessionsSpawn(
 
 	runCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	text, err := runSubagent(runCtx, sessions, messages, prov, id, p.Prompt)
+	text, err := runSubagent(runCtx, sessions, messages, prov, memStore, embedClient, id, p.Prompt)
 	if err != nil {
 		return ToolResult{}, err
 	}
@@ -152,9 +170,11 @@ func runSubagent(
 	sessions store.SessionStore,
 	messages store.MessageStore,
 	prov provider.LLMProvider,
+	memStore *memory.Store,
+	embedClient *memory.EmbedClient,
 	sessionID, prompt string,
 ) (string, error) {
-	a := agent.NewAgent(sessions, messages, SubAgentTools(), prov)
+	a := agent.NewAgent(sessions, messages, SubAgentTools(memStore, embedClient), prov)
 	a.SetPromptMode("minimal")
 	events, unsub := a.Events().Subscribe()
 	defer unsub()

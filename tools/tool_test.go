@@ -32,7 +32,7 @@ func TestMainAgentToolsReturns20UniqueTools(t *testing.T) {
 }
 
 func TestSubAgentToolsReturns6Tools(t *testing.T) {
-	got := SubAgentTools()
+	got := SubAgentTools(nil, nil)
 	if len(got) != 6 {
 		t.Fatalf("want 6 tools, got %d", len(got))
 	}
@@ -51,7 +51,7 @@ func TestSubAgentToolsReturns6Tools(t *testing.T) {
 
 func TestSubAgentToolsAreSubsetOfMainTools(t *testing.T) {
 	mainTools := MainAgentTools(mainDeps())
-	subTools := SubAgentTools()
+	subTools := SubAgentTools(nil, nil)
 	mainSet := make(map[string]struct{}, len(mainTools))
 	for _, tool := range mainTools {
 		mainSet[tool.Name()] = struct{}{}
@@ -64,7 +64,7 @@ func TestSubAgentToolsAreSubsetOfMainTools(t *testing.T) {
 }
 
 func TestToProviderDefsProducesValidJSON(t *testing.T) {
-	defs := ToProviderDefs(SubAgentTools())
+	defs := ToProviderDefs(SubAgentTools(nil, nil))
 	if len(defs) != 6 {
 		t.Fatalf("want 6 defs, got %d", len(defs))
 	}
