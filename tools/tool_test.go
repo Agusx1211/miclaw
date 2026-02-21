@@ -1,6 +1,7 @@
 package tools
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"testing"
@@ -8,8 +9,9 @@ import (
 
 func mainDeps() MainToolDeps {
 	return MainToolDeps{
-		Model:    "test-model",
-		IsActive: func() bool { return false },
+		Model:       "test-model",
+		SendMessage: func(context.Context, string, string) error { return nil },
+		IsActive:    func() bool { return false },
 	}
 }
 
