@@ -8,11 +8,11 @@ import (
 )
 
 func MainAgentTools() []Tool {
-	return []Tool{
+	tools := []Tool{
 		placeholder("read", "placeholder read tool", JSONSchema{Type: "object"}),
-		placeholder("write", "placeholder write tool", JSONSchema{Type: "object"}),
-		placeholder("edit", "placeholder edit tool", JSONSchema{Type: "object"}),
-		placeholder("apply_patch", "placeholder apply_patch tool", JSONSchema{Type: "object"}),
+		writeTool(),
+		editTool(),
+		patchTool(),
 		placeholder("grep", "placeholder grep tool", JSONSchema{Type: "object"}),
 		placeholder("glob", "placeholder glob tool", JSONSchema{Type: "object"}),
 		placeholder("ls", "placeholder ls tool", JSONSchema{Type: "object"}),
@@ -30,10 +30,13 @@ func MainAgentTools() []Tool {
 		placeholder("memory_get", "placeholder memory_get tool", JSONSchema{Type: "object"}),
 		placeholder("subagents", "placeholder subagents tool", JSONSchema{Type: "object"}),
 	}
+	must(len(tools) == 20, "main agent tool count must be 20")
+	must(hasUniqueToolNames(tools), "main agent tool names must be unique")
+	return tools
 }
 
 func SubAgentTools() []Tool {
-	return []Tool{
+	tools := []Tool{
 		placeholder("read", "placeholder read tool", JSONSchema{Type: "object"}),
 		placeholder("grep", "placeholder grep tool", JSONSchema{Type: "object"}),
 		placeholder("glob", "placeholder glob tool", JSONSchema{Type: "object"}),
@@ -41,10 +44,15 @@ func SubAgentTools() []Tool {
 		placeholder("memory_search", "placeholder memory_search tool", JSONSchema{Type: "object"}),
 		placeholder("memory_get", "placeholder memory_get tool", JSONSchema{Type: "object"}),
 	}
+	must(len(tools) == 6, "sub-agent tool count must be 6")
+	must(hasUniqueToolNames(tools), "sub-agent tool names must be unique")
+	return tools
 }
 
 // placeholder creates a stub tool with the given name.
 func placeholder(name, desc string, params JSONSchema) Tool {
+	must(name != "", "placeholder tool name must not be empty")
+	must(params.Type != "", "placeholder schema type must not be empty")
 	return tool{
 		name:   name,
 		desc:   desc,
@@ -53,4 +61,21 @@ func placeholder(name, desc string, params JSONSchema) Tool {
 			panic(fmt.Sprintf("tool not implemented: %s", name))
 		},
 	}
+}
+
+func hasUniqueToolNames(tools []Tool) bool {
+	must(tools != nil, "tool slice must not be nil")
+	must(len(tools) >= 0, "tool slice length must be non-negative")
+
+	seen := map[string]struct{}{}
+	for _, t := range tools {
+		name := t.Name()
+		if _, ok := seen[name]; ok {
+			return false
+		}
+		seen[name] = struct{}{}
+	}
+	must(len(seen) <= len(tools), "unique name count must not exceed tool count")
+	must(len(seen) >= 0, "unique name count must be non-negative")
+	return true
 }
