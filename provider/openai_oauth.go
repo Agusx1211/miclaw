@@ -20,10 +20,11 @@ const (
 )
 
 type OpenAICodexOAuthTokens struct {
-	APIKey       string
-	IDToken      string
-	AccessToken  string
-	RefreshToken string
+	APIKey               string
+	IDToken              string
+	AccessToken          string
+	RefreshToken         string
+	UsedAccessTokenAsKey bool
 }
 
 func GenerateOpenAICodexPKCE() (string, string, error) {
@@ -110,15 +111,21 @@ func exchangeOpenAICodexOAuth(
 	if err != nil {
 		return nil, err
 	}
+	usedAccessFallback := false
 	apiKey, err := exchangeOpenAICodexIDToken(ctx, client, issuer, clientID, id)
 	if err != nil {
-		return nil, err
+		if !shouldUseAccessTokenFallback(err) {
+			return nil, err
+		}
+		apiKey = access
+		usedAccessFallback = true
 	}
 	return &OpenAICodexOAuthTokens{
-		APIKey:       apiKey,
-		IDToken:      id,
-		AccessToken:  access,
-		RefreshToken: refresh,
+		APIKey:               apiKey,
+		IDToken:              id,
+		AccessToken:          access,
+		RefreshToken:         refresh,
+		UsedAccessTokenAsKey: usedAccessFallback,
 	}, nil
 }
 
@@ -200,4 +207,9 @@ func readOAuthStatus(resp *http.Response, prefix string) error {
 		return fmt.Errorf("%s: status %d", prefix, resp.StatusCode)
 	}
 	return fmt.Errorf("%s: status %d: %s", prefix, resp.StatusCode, msg)
+}
+
+func shouldUseAccessTokenFallback(err error) bool {
+	m := strings.ToLower(err.Error())
+	return strings.Contains(m, "invalid_subject_token") || strings.Contains(m, "missing organization_id")
 }

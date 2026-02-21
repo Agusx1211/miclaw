@@ -117,6 +117,9 @@ func runCodexOAuthFlow(u *ui) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if tokens.UsedAccessTokenAsKey {
+		u.note("OpenAI did not return an exchangeable organization token; using OAuth access token directly.")
+	}
 	u.note("OAuth login complete.")
 	return tokens.APIKey, nil
 }

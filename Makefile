@@ -1,7 +1,10 @@
-.PHONY: all build test vet lint
+.PHONY: all build test vet lint cross
 
 build:
 	go build ./cmd/miclaw
+
+cross:
+	./scripts/cross_compile_linux.sh
 
 test:
 	go test -race -count=1 ./...

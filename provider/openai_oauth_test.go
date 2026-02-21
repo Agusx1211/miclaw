@@ -112,6 +112,9 @@ func TestExchangeOpenAICodexOAuthCode(t *testing.T) {
 	if tokens.APIKey != "sk-oauth-1" {
 		t.Fatalf("api key = %q", tokens.APIKey)
 	}
+	if tokens.UsedAccessTokenAsKey {
+		t.Fatal("expected token-exchange API key, got access-token fallback")
+	}
 	if tokens.IDToken != "id-1" || tokens.AccessToken != "acc-1" || tokens.RefreshToken != "ref-1" {
 		t.Fatalf("unexpected tokens: %#v", tokens)
 	}
@@ -132,5 +135,55 @@ func TestExchangeOpenAICodexOAuthCode(t *testing.T) {
 	}
 	if !strings.Contains(reqBodies[1], "subject_token=id-1") {
 		t.Fatalf("second body missing subject_token: %q", reqBodies[1])
+	}
+}
+
+func TestExchangeOpenAICodexOAuthCodeFallsBackWhenAPIKeyExchangeRejected(t *testing.T) {
+	reqBodies := []string{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatalf("read body: %v", err)
+		}
+		reqBodies = append(reqBodies, string(b))
+		switch len(reqBodies) {
+		case 1:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id_token":"id-1","access_token":"acc-1","refresh_token":"ref-1"}`))
+		case 2:
+			w.WriteHeader(http.StatusUnauthorized)
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"error":{
+					"message":"Invalid ID token: missing organization_id",
+					"code":"invalid_subject_token"
+				}
+			}`))
+		default:
+			t.Fatalf("unexpected request count: %d", len(reqBodies))
+		}
+	}))
+	defer srv.Close()
+
+	tokens, err := exchangeOpenAICodexOAuth(
+		context.Background(),
+		srv.Client(),
+		srv.URL,
+		OpenAICodexOAuthClientID,
+		"code-1",
+		"verifier-1",
+		"http://localhost:1455/auth/callback",
+	)
+	if err != nil {
+		t.Fatalf("exchange oauth: %v", err)
+	}
+	if tokens.APIKey != "acc-1" {
+		t.Fatalf("api key = %q", tokens.APIKey)
+	}
+	if !tokens.UsedAccessTokenAsKey {
+		t.Fatal("expected access-token fallback")
+	}
+	if tokens.IDToken != "id-1" || tokens.AccessToken != "acc-1" || tokens.RefreshToken != "ref-1" {
+		t.Fatalf("unexpected tokens: %#v", tokens)
 	}
 }

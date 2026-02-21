@@ -18,6 +18,12 @@ type modelsResponse struct {
 	} `json:"data"`
 }
 
+type codexModelsResponse struct {
+	Models []struct {
+		Slug string `json:"slug"`
+	} `json:"models"`
+}
+
 func DiscoverModelIDs(ctx context.Context, cfg config.ProviderConfig) ([]string, error) {
 	u, err := modelsURL(cfg)
 	if err != nil {
@@ -30,17 +36,36 @@ func DiscoverModelIDs(ctx context.Context, cfg config.ProviderConfig) ([]string,
 	applyModelHeaders(req, cfg)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
+		if cfg.Backend == "codex" {
+			return codexFallbackModelIDs(), nil
+		}
 		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if cfg.Backend == "codex" {
+			return codexFallbackModelIDs(), nil
+		}
 		return nil, readModelsStatus(resp)
 	}
-	var body modelsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 512*1024))
+	if err != nil {
+		if cfg.Backend == "codex" {
+			return codexFallbackModelIDs(), nil
+		}
 		return nil, err
 	}
-	return uniqueSortedModelIDs(body), nil
+	models, err := decodeModelIDs(data, cfg.Backend)
+	if err != nil {
+		if cfg.Backend == "codex" {
+			return codexFallbackModelIDs(), nil
+		}
+		return nil, err
+	}
+	if len(models) == 0 && cfg.Backend == "codex" {
+		return codexFallbackModelIDs(), nil
+	}
+	return models, nil
 }
 
 func modelsURL(cfg config.ProviderConfig) (string, error) {
@@ -79,6 +104,20 @@ func readModelsStatus(resp *http.Response) error {
 	return fmt.Errorf("models list failed: status %d: %s", resp.StatusCode, msg)
 }
 
+func decodeModelIDs(data []byte, backend string) ([]string, error) {
+	if backend == "codex" {
+		var codexBody codexModelsResponse
+		if err := json.Unmarshal(data, &codexBody); err == nil && len(codexBody.Models) > 0 {
+			return uniqueSortedCodexModelIDs(codexBody), nil
+		}
+	}
+	var body modelsResponse
+	if err := json.Unmarshal(data, &body); err != nil {
+		return nil, err
+	}
+	return uniqueSortedModelIDs(body), nil
+}
+
 func uniqueSortedModelIDs(body modelsResponse) []string {
 	set := map[string]bool{}
 	for _, m := range body.Data {
@@ -92,4 +131,29 @@ func uniqueSortedModelIDs(body modelsResponse) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func uniqueSortedCodexModelIDs(body codexModelsResponse) []string {
+	set := map[string]bool{}
+	for _, m := range body.Models {
+		if m.Slug != "" {
+			set[m.Slug] = true
+		}
+	}
+	out := make([]string, 0, len(set))
+	for id := range set {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func codexFallbackModelIDs() []string {
+	return []string{
+		"gpt-5.3-codex",
+		"gpt-5.3-codex-spark",
+		"gpt-5.2-codex",
+		"gpt-5.1-codex",
+		"codex-mini-latest",
+	}
 }

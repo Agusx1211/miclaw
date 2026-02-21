@@ -17,6 +17,9 @@ The original codebase grew to 450k+ lines. Miclaw delivers the same core functio
 # Build
 go build -o miclaw ./cmd/miclaw
 
+# Cross-compile Linux binaries (Ubuntu x64 + arm64)
+make cross
+
 # Run first-time setup TUI
 ./miclaw --setup
 ```

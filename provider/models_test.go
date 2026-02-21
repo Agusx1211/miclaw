@@ -73,7 +73,7 @@ func TestDiscoverModelIDsHandlesStatusError(t *testing.T) {
 	defer srv.Close()
 
 	cfg := config.ProviderConfig{
-		Backend: "codex",
+		Backend: "openrouter",
 		BaseURL: srv.URL,
 		APIKey:  "sk-x",
 	}
@@ -83,5 +83,52 @@ func TestDiscoverModelIDsHandlesStatusError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "status 401") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDiscoverModelIDsCodexFallsBackOnStatusError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("unauthorized"))
+	}))
+	defer srv.Close()
+
+	cfg := config.ProviderConfig{
+		Backend: "codex",
+		BaseURL: srv.URL,
+		APIKey:  "sk-x",
+	}
+	models, err := DiscoverModelIDs(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("discover models: %v", err)
+	}
+	if len(models) == 0 {
+		t.Fatal("expected fallback codex model list")
+	}
+	if models[0] != "gpt-5.3-codex" {
+		t.Fatalf("unexpected fallback models: %#v", models)
+	}
+}
+
+func TestDiscoverModelIDsCodexResponseShape(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/models" {
+			t.Fatalf("unexpected path: %s", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"models":[{"slug":"z"},{"slug":"a"},{"slug":"a"}]}`))
+	}))
+	defer srv.Close()
+
+	cfg := config.ProviderConfig{
+		Backend: "codex",
+		BaseURL: srv.URL,
+		APIKey:  "sk-x",
+	}
+	models, err := DiscoverModelIDs(context.Background(), cfg)
+	if err != nil {
+		t.Fatalf("discover models: %v", err)
+	}
+	if len(models) != 2 || models[0] != "a" || models[1] != "z" {
+		t.Fatalf("unexpected models: %#v", models)
 	}
 }

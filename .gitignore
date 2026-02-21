@@ -2,6 +2,7 @@ DEV_VARS.md
 
 # Go binaries and artifacts
 /miclaw
+/dist/
 *.exe
 *.test
 *.out

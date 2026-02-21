@@ -172,17 +172,25 @@ func (u *ui) askCSV(label string, current []string) ([]string, error) {
 
 func (u *ui) chooseOne(label string, options []string, current string) (string, error) {
 	u.note(label + ":")
+	defaultIdx := 0
 	for i, opt := range options {
 		mark := " "
 		if opt == current {
 			mark = "*"
+			defaultIdx = i
 		}
 		fmt.Fprintf(u.out, "  %d. [%s] %s\n", i+1, mark, opt)
 	}
+	if defaultIdx < 0 || defaultIdx >= len(options) {
+		defaultIdx = 0
+	}
 	for {
-		v, err := u.readLine("Choose number: ")
+		v, err := u.readLine(fmt.Sprintf("Choose number [%d]: ", defaultIdx+1))
 		if err != nil {
 			return "", err
+		}
+		if v == "" {
+			return options[defaultIdx], nil
 		}
 		n, err := strconv.Atoi(v)
 		if err == nil && n >= 1 && n <= len(options) {
