@@ -1,1 +1,8 @@
 DEV_VARS.md
+
+# Go binaries and artifacts
+/miclaw
+*.exe
+*.test
+*.out
+*.cover
