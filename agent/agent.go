@@ -64,6 +64,16 @@ func (a *Agent) SetPromptMode(mode string) {
 	a.promptMode = mode
 }
 
+func (a *Agent) SetWorkspace(ws *prompt.Workspace) {
+
+	a.workspace = ws
+}
+
+func (a *Agent) SetSkills(skills []prompt.SkillSummary) {
+
+	a.skills = skills
+}
+
 func (a *Agent) Enqueue(input Input) {
 
 	a.queue.Push(input)
