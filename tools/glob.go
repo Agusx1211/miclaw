@@ -21,8 +21,7 @@ type globParams struct {
 }
 
 func globTool() Tool {
-	must(len("glob") > 0, "glob tool name is empty")
-	must(len("Find file paths using glob pattern") > 0, "glob tool has description")
+
 	return tool{
 		name: "glob",
 		desc: "Find file paths using glob pattern",
@@ -39,14 +38,13 @@ func globTool() Tool {
 }
 
 func runGlob(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-	must(ctx != nil, "run context is nil")
-	must(call.Name == "glob", "run called with wrong tool name")
+
 	params, err := parseGlobParams(call.Parameters)
 	if err != nil {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
 	root := filepath.Clean(params.Path)
-	must(root != "", "glob root path is empty")
+
 	if _, err := os.Stat(root); err != nil {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
@@ -81,12 +79,12 @@ func runGlob(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 }
 
 func parseGlobParams(raw json.RawMessage) (globParams, error) {
-	must(len(raw) > 1, "glob parameters are empty")
+
 	var params globParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return globParams{}, err
 	}
-	must(params.Pattern != "", "glob pattern is required")
+
 	if params.Path == "" {
 		params.Path = "."
 	}

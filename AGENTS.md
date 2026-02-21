@@ -11,7 +11,6 @@ Every decision must favor fewer lines of code. If two approaches exist, pick the
 ## Code Style Rules
 
 - **All functions must fit on one page (~60 lines max).** If a function is longer, split it.
-- **Every function must have at least two assert statements.** Assert preconditions, assert postconditions. Panic on violation. Do not handle gracefully — crash loud and early.
 - **Declare data with minimal scope.** No package-level variables unless absolutely necessary. Declare variables as close to their use as possible. Prefer short-lived values.
 - **Compile with ALL warnings enabled.** Use `go vet`, `staticcheck`, and `-race` in tests. Treat warnings as errors.
 - **No defensive code.** Do not check for conditions that "shouldn't happen." Do not add fallbacks. Do not add nil guards on internal types. If something is nil that shouldn't be, let it panic. The tests will catch it.

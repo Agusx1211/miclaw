@@ -6,14 +6,12 @@ import (
 )
 
 func matchPathPattern(pattern, target string) bool {
-	must(pattern != "", "match pattern is empty")
-	must(target != "", "target path is empty")
+
 	p := strings.TrimSuffix(strings.TrimPrefix(pattern, "./"), "/")
 	t := strings.TrimSuffix(strings.TrimPrefix(target, "./"), "/")
 	p = path.Clean(p)
 	t = path.Clean(t)
-	must(p != "", "normalized pattern is empty")
-	must(t != "", "normalized target is empty")
+
 	if !strings.Contains(p, "/") {
 		return matchPathSegment(p, path.Base(t))
 	}
@@ -21,8 +19,7 @@ func matchPathPattern(pattern, target string) bool {
 }
 
 func matchPathSegments(patterns, targets []string, pi, ti int) bool {
-	must(patterns != nil, "pattern segments is nil")
-	must(targets != nil, "target segments is nil")
+
 	if pi == len(patterns) {
 		return ti == len(targets)
 	}
@@ -48,9 +45,8 @@ func matchPathSegments(patterns, targets []string, pi, ti int) bool {
 }
 
 func matchPathSegment(pattern, target string) bool {
-	must(pattern != "", "match segment pattern is empty")
-	must(target != "", "match segment target is empty")
-	ok, err := path.Match(pattern, target)
-	must(err == nil, "invalid glob pattern segment")
+
+	ok, _ := path.Match(pattern, target)
+
 	return ok
 }

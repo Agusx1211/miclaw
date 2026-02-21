@@ -30,9 +30,7 @@ func NewAgent(
 	toolList []tools.Tool,
 	prov provider.LLMProvider,
 ) *Agent {
-	must(sessions != nil, "session store must not be nil")
-	must(messages != nil, "message store must not be nil")
-	must(prov != nil, "provider must not be nil")
+
 	a := &Agent{
 		sessions:    sessions,
 		messages:    messages,
@@ -41,15 +39,12 @@ func NewAgent(
 		eventBroker: NewBroker[AgentEvent](),
 		queue:       &InputQueue{},
 	}
-	must(a.provider != nil, "provider must not be nil")
-	must(a.eventBroker != nil, "event broker must not be nil")
-	must(a.queue != nil, "input queue must not be nil")
+
 	return a
 }
 
 func (a *Agent) Enqueue(input Input) {
-	must(a != nil, "agent must not be nil")
-	must(a.queue != nil, "input queue must not be nil")
+
 	a.queue.Push(input)
 	a.mu.Lock()
 	if a.active.Load() {
@@ -65,8 +60,7 @@ func (a *Agent) Enqueue(input Input) {
 }
 
 func (a *Agent) Cancel() {
-	must(a != nil, "agent must not be nil")
-	must(a.queue != nil, "input queue must not be nil")
+
 	a.mu.Lock()
 	cancel := a.cancel
 	a.cancel = nil
@@ -75,24 +69,21 @@ func (a *Agent) Cancel() {
 	if cancel != nil {
 		cancel()
 	}
-	must(!a.active.Load(), "agent must be inactive after cancel")
+
 }
 
 func (a *Agent) IsActive() bool {
-	must(a != nil, "agent must not be nil")
-	must(a.eventBroker != nil, "event broker must not be nil")
+
 	return a.active.Load()
 }
 
 func (a *Agent) Events() *Broker[AgentEvent] {
-	must(a != nil, "agent must not be nil")
-	must(a.eventBroker != nil, "event broker must not be nil")
+
 	return a.eventBroker
 }
 
 func (a *Agent) awaitCancellation(ctx context.Context, runID uint64) {
-	must(a != nil, "agent must not be nil")
-	must(ctx != nil, "context must not be nil")
+
 	<-ctx.Done()
 	a.mu.Lock()
 	if a.runID.Load() == runID {
@@ -100,5 +91,5 @@ func (a *Agent) awaitCancellation(ctx context.Context, runID uint64) {
 		a.active.Store(false)
 	}
 	a.mu.Unlock()
-	must(runID > 0, "run id must be positive")
+
 }

@@ -21,35 +21,55 @@ func runReadTool(t *testing.T, path string, offset *int, limit *int) (string, bo
 		params["limit"] = *limit
 	}
 	raw, err := json.Marshal(params)
-	must(err == nil, "failed to marshal read parameters")
+	if err != nil {
+		t.Fatalf("failed to marshal read parameters: %v", err)
+	}
+
 	result, err := ReadTool().Run(context.Background(), model.ToolCallPart{Parameters: raw})
-	must(err == nil, "read tool run returned error")
-	must(result.Content != "" || !result.IsError, "error result should provide message")
+	if err != nil {
+		t.Fatalf("read tool run returned error: %v", err)
+	}
+	if result.Content == "" && result.IsError {
+		t.Fatalf("error result should provide message")
+	}
+
 	return result.Content, result.IsError
 }
 
 func TestReadToolReadsSmallFile(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "small.txt")
-	must(os.WriteFile(path, []byte("alpha\nbeta\ngamma"), 0o644) == nil, "failed to write test file")
+	if err := os.WriteFile(path, []byte("alpha\nbeta\ngamma"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
 
 	got, isErr := runReadTool(t, path, nil, nil)
-	must(!isErr, "small read should succeed")
-	must(got == "     1\talpha\n     2\tbeta\n     3\tgamma\n", "line numbering mismatch")
+	if isErr {
+		t.Fatalf("small read should succeed")
+	}
+	if got != "     1\talpha\n     2\tbeta\n     3\tgamma\n" {
+		t.Fatalf("line numbering mismatch: %q", got)
+	}
+
 }
 
 func TestReadToolSupportsOffsetAndLimitPagination(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "paginated.txt")
-	must(
-		os.WriteFile(path, []byte("one\ntwo\nthree\nfour\nfive\n"), 0o644) == nil,
-		"failed to write test file",
-	)
+	if err := os.WriteFile(path, []byte("one\ntwo\nthree\nfour\nfive\n"), 0o644); err != nil {
+		t.Fatalf("failed to write test file: %v", err)
+	}
+
 	off := 1
 	lim := 2
 	got, isErr := runReadTool(t, path, &off, &lim)
-	must(!isErr, "pagination read should succeed")
-	must(got == "     2\ttwo\n     3\tthree\n", "pagination output incorrect")
+	if isErr {
+		t.Fatalf("pagination read should succeed")
+	}
+	if got != "     2\ttwo\n     3\tthree\n" {
+		t.Fatalf("pagination output incorrect: %q", got)
+	}
+
 }
 
 func TestReadToolReturnsErrorForMissingFile(t *testing.T) {
@@ -57,18 +77,30 @@ func TestReadToolReturnsErrorForMissingFile(t *testing.T) {
 	path := filepath.Join(tmp, "missing.txt")
 
 	got, isErr := runReadTool(t, path, nil, nil)
-	must(isErr, "missing file should be error")
-	must(strings.Contains(got, "no such file"), "missing-file message mismatch")
+	if !isErr {
+		t.Fatalf("missing file should be error")
+	}
+	if !strings.Contains(got, "no such file") {
+		t.Fatalf("missing-file message mismatch: %q", got)
+	}
+
 }
 
 func TestReadToolReturnsErrorForBinaryFile(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "binary.bin")
-	must(os.WriteFile(path, []byte{0x00, 0x01, 0x7f}, 0o644) == nil, "failed to write binary fixture")
+	if err := os.WriteFile(path, []byte{0x00, 0x01, 0x7f}, 0o644); err != nil {
+		t.Fatalf("failed to write binary fixture: %v", err)
+	}
 
 	got, isErr := runReadTool(t, path, nil, nil)
-	must(isErr, "binary read should be error")
-	must(strings.Contains(strings.ToLower(got), "binary"), "binary error message mismatch")
+	if !isErr {
+		t.Fatalf("binary read should be error")
+	}
+	if !strings.Contains(strings.ToLower(got), "binary") {
+		t.Fatalf("binary error message mismatch: %q", got)
+	}
+
 }
 
 func TestReadToolTruncatesLargeOutputs(t *testing.T) {
@@ -79,34 +111,55 @@ func TestReadToolTruncatesLargeOutputs(t *testing.T) {
 		b.WriteString(strings.Repeat("x", 700))
 		b.WriteByte('\n')
 	}
-	must(os.WriteFile(path, []byte(b.String()), 0o644) == nil, "failed to write large file")
+	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
+		t.Fatalf("failed to write large file: %v", err)
+	}
 
 	got, isErr := runReadTool(t, path, nil, nil)
-	must(!isErr, "large read should not error")
-	must(len(got) <= 512*1024, "large read should be truncated")
-	must(strings.Contains(got, "truncated"), "truncation message missing")
+	if isErr {
+		t.Fatalf("large read should not error")
+	}
+	if len(got) > 512*1024 {
+		t.Fatalf("large read should be truncated")
+	}
+	if !strings.Contains(got, "truncated") {
+		t.Fatalf("truncation message missing")
+	}
+
 }
 
 func TestReadToolUsesLineNumbersAfterOffset(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "offset.txt")
-	must(
-		os.WriteFile(path, []byte("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\n"), 0o644) == nil,
-		"failed to write fixture",
-	)
+	if err := os.WriteFile(path, []byte("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\n"), 0o644); err != nil {
+		t.Fatalf("failed to write fixture: %v", err)
+	}
+
 	off := 5
 	lim := 3
 	got, isErr := runReadTool(t, path, &off, &lim)
-	must(!isErr, "offset read should succeed")
-	must(got == "     6\tf\n     7\tg\n     8\th\n", "line numbering after offset mismatch")
+	if isErr {
+		t.Fatalf("offset read should succeed")
+	}
+	if got != "     6\tf\n     7\tg\n     8\th\n" {
+		t.Fatalf("line numbering after offset mismatch: %q", got)
+	}
+
 }
 
 func TestReadToolReadsEmptyFile(t *testing.T) {
 	tmp := t.TempDir()
 	path := filepath.Join(tmp, "empty.txt")
-	must(os.WriteFile(path, []byte{}, 0o644) == nil, "failed to write empty file")
+	if err := os.WriteFile(path, []byte{}, 0o644); err != nil {
+		t.Fatalf("failed to write empty file: %v", err)
+	}
 
 	got, isErr := runReadTool(t, path, nil, nil)
-	must(!isErr, "empty file read should not error")
-	must(got == "", "empty file should return empty content")
+	if isErr {
+		t.Fatalf("empty file read should not error")
+	}
+	if got != "" {
+		t.Fatalf("empty file should return empty content: %q", got)
+	}
+
 }

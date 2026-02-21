@@ -50,16 +50,15 @@ type toolState struct {
 }
 
 func parseSSEStream(body io.ReadCloser) <-chan ProviderEvent {
-	must(body != nil, "stream body is nil")
+
 	out := make(chan ProviderEvent, 16)
-	must(out != nil, "provider event channel is nil")
+
 	go parseSSE(body, out)
 	return out
 }
 
 func parseSSE(body io.ReadCloser, out chan<- ProviderEvent) {
-	must(body != nil, "stream body is nil")
-	must(out != nil, "provider event channel is nil")
+
 	defer close(out)
 	defer body.Close()
 
@@ -81,8 +80,7 @@ func parseSSE(body io.ReadCloser, out chan<- ProviderEvent) {
 }
 
 func flushData(data string, p map[int]toolState, out chan<- ProviderEvent) bool {
-	must(p != nil, "pending tool call map is nil")
-	must(out != nil, "provider event channel is nil")
+
 	d := strings.TrimSpace(data)
 	if d == "" {
 		return false
@@ -99,8 +97,7 @@ func flushData(data string, p map[int]toolState, out chan<- ProviderEvent) bool 
 }
 
 func parseChunk(data string) (openAIChunk, bool) {
-	must(data != "", "chunk payload is empty")
-	must(strings.TrimSpace(data) == data, "chunk payload must be trimmed")
+
 	var chunk openAIChunk
 	if err := json.Unmarshal([]byte(data), &chunk); err != nil {
 		return openAIChunk{}, false
@@ -109,8 +106,7 @@ func parseChunk(data string) (openAIChunk, bool) {
 }
 
 func emitChunk(chunk openAIChunk, p map[int]toolState, out chan<- ProviderEvent) {
-	must(p != nil, "pending tool call map is nil")
-	must(out != nil, "provider event channel is nil")
+
 	for _, c := range chunk.Choices {
 		if c.Delta.Content != "" {
 			out <- ProviderEvent{Type: EventContentDelta, Delta: c.Delta.Content}
@@ -133,8 +129,7 @@ func emitChunk(chunk openAIChunk, p map[int]toolState, out chan<- ProviderEvent)
 }
 
 func emitToolCalls(calls []openAIToolCallDelta, p map[int]toolState, out chan<- ProviderEvent) {
-	must(p != nil, "pending tool call map is nil")
-	must(out != nil, "provider event channel is nil")
+
 	for _, c := range calls {
 		st := p[c.Index]
 		if c.ID != "" {
@@ -163,8 +158,7 @@ func emitToolCalls(calls []openAIToolCallDelta, p map[int]toolState, out chan<- 
 }
 
 func emitToolStops(p map[int]toolState, out chan<- ProviderEvent) {
-	must(p != nil, "pending tool call map is nil")
-	must(out != nil, "provider event channel is nil")
+
 	k := make([]int, 0, len(p))
 	for i := range p {
 		k = append(k, i)
@@ -178,8 +172,7 @@ func emitToolStops(p map[int]toolState, out chan<- ProviderEvent) {
 }
 
 func usageInfo(u *openAIUsage) *UsageInfo {
-	must(u == nil || u.PromptTokens >= 0, "prompt tokens must be non-negative")
-	must(u == nil || u.CompletionTokens >= 0, "completion tokens must be non-negative")
+
 	if u == nil {
 		return nil
 	}

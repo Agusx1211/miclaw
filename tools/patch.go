@@ -46,8 +46,7 @@ func patchTool() Tool {
 		},
 		Required: []string{"path", "patch"},
 	}
-	must(params.Type == "object", "patch schema type must be object")
-	must(len(params.Required) == 2, "patch schema required fields mismatch")
+
 	return tool{
 		name:   "apply_patch",
 		desc:   "Apply a unified diff patch to an existing file",
@@ -57,8 +56,6 @@ func patchTool() Tool {
 }
 
 func runPatch(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-	must(ctx != nil, "context must not be nil")
-	must(call.Parameters != nil, "patch parameters must not be nil")
 
 	args, err := parsePatchParams(call.Parameters)
 	if err != nil {
@@ -82,14 +79,11 @@ func runPatch(ctx context.Context, call model.ToolCallPart) (ToolResult, error) 
 		return ToolResult{}, fmt.Errorf("write file %q: %v", args.Path, err)
 	}
 	msg := fmt.Sprintf("applied %d hunk(s) to %s\n%s", len(hunks), args.Path, strings.Join(summaryLines, "\n"))
-	must(len(summaryLines) == len(hunks), "patch summary length mismatch")
-	must(msg != "", "patch summary must not be empty")
+
 	return ToolResult{Content: msg}, nil
 }
 
 func parsePatchParams(raw json.RawMessage) (patchParams, error) {
-	must(raw != nil, "patch raw parameters must not be nil")
-	must(len(raw) > 0, "patch raw parameters must not be empty")
 
 	var input struct {
 		Path  *string `json:"path"`
@@ -105,14 +99,11 @@ func parsePatchParams(raw json.RawMessage) (patchParams, error) {
 		return patchParams{}, errors.New("apply_patch parameter patch is required")
 	}
 	out := patchParams{Path: *input.Path, Patch: *input.Patch}
-	must(out.Path != "", "patch path must not be empty")
-	must(out.Patch != "", "patch text must not be empty")
+
 	return out, nil
 }
 
 func parseUnifiedPatch(raw string) ([]patchHunk, error) {
-	must(raw != "", "raw patch must not be empty")
-	must(strings.TrimSpace(raw) != "", "raw patch must not be blank")
 
 	normalized := strings.ReplaceAll(raw, "\r\n", "\n")
 	lines := strings.Split(normalized, "\n")
@@ -134,14 +125,11 @@ func parseUnifiedPatch(raw string) ([]patchHunk, error) {
 	if len(hunks) == 0 {
 		return nil, errors.New("invalid unified diff: no hunks found")
 	}
-	must(len(hunks) > 0, "parsed hunk count must be positive")
-	must(cap(hunks) >= len(hunks), "parsed hunk capacity mismatch")
+
 	return hunks, nil
 }
 
 func parseOneHunk(lines []string, start int) (patchHunk, int, error) {
-	must(start >= 0, "hunk start index must be non-negative")
-	must(start < len(lines), "hunk start index must be within bounds")
 
 	h, err := parseHunkHeader(lines[start])
 	if err != nil {
@@ -171,14 +159,11 @@ func parseOneHunk(lines []string, start int) (patchHunk, int, error) {
 			start+1, h.oldCount, h.newCount, oldSide, newSide,
 		)
 	}
-	must(i > start, "hunk parser index must advance")
-	must(len(h.lines) > 0, "hunk must contain lines")
+
 	return h, i, nil
 }
 
 func parseHunkHeader(line string) (patchHunk, error) {
-	must(strings.HasPrefix(line, "@@ "), "hunk header must start with @@")
-	must(strings.Contains(line, " @@"), "hunk header missing closing marker")
 
 	re := regexp.MustCompile(`^@@ -([0-9]+)(?:,([0-9]+))? \+([0-9]+)(?:,([0-9]+))? @@`)
 	m := re.FindStringSubmatch(line)
@@ -211,28 +196,22 @@ func parseHunkHeader(line string) (patchHunk, error) {
 		return patchHunk{}, fmt.Errorf("invalid hunk header values: %q", line)
 	}
 	h := patchHunk{oldStart: oldStart, oldCount: oldCount, newStart: newStart, newCount: newCount}
-	must(h.oldStart > 0, "hunk old start must be positive")
-	must(h.newStart > 0, "hunk new start must be positive")
+
 	return h, nil
 }
 
 func parsePatchLine(line string) (patchLine, error) {
-	must(line != "", "patch line must not be empty")
-	must(len(line) > 0, "patch line length must be positive")
 
 	kind := line[0]
 	if kind != ' ' && kind != '+' && kind != '-' {
 		return patchLine{}, fmt.Errorf("invalid patch line prefix %q", kind)
 	}
 	out := patchLine{kind: kind, text: line[1:]}
-	must(out.kind != 0, "patch line kind must not be zero")
-	must(len(out.text) >= 0, "patch line text length must be non-negative")
+
 	return out, nil
 }
 
 func countHunkSides(lines []patchLine) (int, int) {
-	must(lines != nil, "hunk lines must not be nil")
-	must(len(lines) > 0, "hunk lines must not be empty")
 
 	oldCount, newCount := 0, 0
 	for _, line := range lines {
@@ -248,14 +227,11 @@ func countHunkSides(lines []patchLine) (int, int) {
 			panic(fmt.Sprintf("unknown patch line kind %q", line.kind))
 		}
 	}
-	must(oldCount >= 0, "old-side count must be non-negative")
-	must(newCount >= 0, "new-side count must be non-negative")
+
 	return oldCount, newCount
 }
 
 func splitFileLines(s string) ([]string, bool) {
-	must(len(s) >= 0, "file content length must be non-negative")
-	must(len([]byte(s)) >= 0, "file content byte length must be non-negative")
 
 	if s == "" {
 		return []string{}, false
@@ -265,14 +241,11 @@ func splitFileLines(s string) ([]string, bool) {
 	if trailingNewline {
 		parts = parts[:len(parts)-1]
 	}
-	must(len(parts) >= 0, "split file lines count must be non-negative")
-	must(cap(parts) >= len(parts), "split file lines capacity mismatch")
+
 	return parts, trailingNewline
 }
 
 func joinFileLines(lines []string, trailingNewline bool) string {
-	must(lines != nil, "file lines slice must not be nil")
-	must(len(lines) >= 0, "file lines length must be non-negative")
 
 	if len(lines) == 0 {
 		if trailingNewline {
@@ -284,14 +257,11 @@ func joinFileLines(lines []string, trailingNewline bool) string {
 	if trailingNewline {
 		out += "\n"
 	}
-	must(out == "" || strings.Count(out, "\n") >= 0, "joined content newline count invalid")
-	must(len([]byte(out)) >= 0, "joined content byte length must be non-negative")
+
 	return out
 }
 
 func applyHunks(lines []string, hunks []patchHunk) ([]string, []string, error) {
-	must(lines != nil, "input lines must not be nil")
-	must(hunks != nil, "hunks must not be nil")
 
 	out := append([]string{}, lines...)
 	summary := make([]string, 0, len(hunks))
@@ -306,14 +276,11 @@ func applyHunks(lines []string, hunks []patchHunk) ([]string, []string, error) {
 		delta += nextDelta
 		summary = append(summary, fmt.Sprintf("hunk %d applied at line %d", i+1, start+1))
 	}
-	must(len(summary) == len(hunks), "patch summary count must equal hunk count")
-	must(cap(out) >= len(out), "patched output capacity mismatch")
+
 	return out, summary, nil
 }
 
 func applySingleHunk(lines []string, h patchHunk, expected int) ([]string, int, int, error) {
-	must(lines != nil, "lines must not be nil")
-	must(h.oldStart > 0, "hunk old start must be positive")
 
 	start, err := findHunkStart(lines, h, expected)
 	if err != nil {
@@ -327,14 +294,11 @@ func applySingleHunk(lines []string, h patchHunk, expected int) ([]string, int, 
 		return nil, 0, 0, fmt.Errorf("hunk body count mismatch: got -%d +%d", oldSide, newSide)
 	}
 	delta := newSide - oldSide
-	must(start >= 0, "applied hunk start must be non-negative")
-	must(start <= len(lines), "applied hunk start must be within bounds")
+
 	return out, start, delta, nil
 }
 
 func findHunkStart(lines []string, h patchHunk, expected int) (int, error) {
-	must(lines != nil, "lines must not be nil")
-	must(h.oldStart > 0, "hunk old start must be positive")
 
 	target := expected
 	if target < 0 {
@@ -352,8 +316,6 @@ func findHunkStart(lines []string, h patchHunk, expected int) (int, error) {
 }
 
 func hunkCandidates(expected, max, window int) []int {
-	must(max >= 0, "candidate max must be non-negative")
-	must(window >= 0, "candidate window must be non-negative")
 
 	seen := map[int]struct{}{}
 	out := make([]int, 0, 1+window*2)
@@ -369,14 +331,11 @@ func hunkCandidates(expected, max, window int) []int {
 			out = append(out, c)
 		}
 	}
-	must(len(out) > 0, "candidate list must not be empty")
-	must(len(seen) == len(out), "candidate dedupe mismatch")
+
 	return out
 }
 
 func hunkMatches(lines []string, h patchHunk, start int) bool {
-	must(lines != nil, "lines must not be nil")
-	must(start >= 0 && start <= len(lines), "hunk match start out of range")
 
 	i := start
 	for _, line := range h.lines {
@@ -388,14 +347,11 @@ func hunkMatches(lines []string, h patchHunk, start int) bool {
 		}
 		i++
 	}
-	must(i >= start, "hunk match index must not move backwards")
-	must(i <= len(lines), "hunk match index must not exceed line count")
+
 	return true
 }
 
 func rewriteWithHunk(lines []string, h patchHunk, start int) ([]string, int, int, error) {
-	must(lines != nil, "lines must not be nil")
-	must(start >= 0 && start <= len(lines), "rewrite start out of range")
 
 	out := make([]string, 0, len(lines)+h.newCount-h.oldCount)
 	out = append(out, lines[:start]...)
@@ -417,7 +373,6 @@ func rewriteWithHunk(lines []string, h patchHunk, start int) ([]string, int, int
 		i++
 	}
 	out = append(out, lines[i:]...)
-	must(oldSide >= 0, "rewrite old-side count must be non-negative")
-	must(newSide >= 0, "rewrite new-side count must be non-negative")
+
 	return out, oldSide, newSide, nil
 }

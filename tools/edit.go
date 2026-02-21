@@ -41,8 +41,7 @@ func editTool() Tool {
 		},
 		Required: []string{"path", "old_text", "new_text"},
 	}
-	must(params.Type == "object", "edit schema type must be object")
-	must(len(params.Required) == 3, "edit schema required fields mismatch")
+
 	return tool{
 		name:   "edit",
 		desc:   "Replace text in an existing file",
@@ -52,8 +51,6 @@ func editTool() Tool {
 }
 
 func runEdit(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-	must(ctx != nil, "context must not be nil")
-	must(call.Parameters != nil, "edit parameters must not be nil")
 
 	args, err := parseEditParams(call.Parameters)
 	if err != nil {
@@ -71,14 +68,11 @@ func runEdit(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 		return ToolResult{}, fmt.Errorf("write file %q: %v", args.Path, err)
 	}
 	msg := editSummary(args, count)
-	must(count > 0, "edit replacement count must be positive")
-	must(msg != "", "edit summary must not be empty")
+
 	return ToolResult{Content: msg}, nil
 }
 
 func parseEditParams(raw json.RawMessage) (editParams, error) {
-	must(raw != nil, "edit raw parameters must not be nil")
-	must(len(raw) > 0, "edit raw parameters must not be empty")
 
 	var input struct {
 		Path       *string `json:"path"`
@@ -102,28 +96,22 @@ func parseEditParams(raw json.RawMessage) (editParams, error) {
 	if input.ReplaceAll != nil {
 		out.ReplaceAll = *input.ReplaceAll
 	}
-	must(out.Path != "", "edit path must not be empty")
-	must(out.OldText != "", "edit old_text must not be empty")
+
 	return out, nil
 }
 
 func readExistingFile(path string) (string, error) {
-	must(path != "", "edit path must not be empty")
-	must(strings.TrimSpace(path) != "", "edit path must not be blank")
 
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return "", fmt.Errorf("read file %q: %v", path, err)
 	}
 	out := string(b)
-	must(len(out) >= 0, "edit file content length must be non-negative")
-	must(len(b) == len([]byte(out)), "edit file bytes length mismatch")
+
 	return out, nil
 }
 
 func editContent(before string, args editParams) (string, int, error) {
-	must(args.Path != "", "edit path must not be empty")
-	must(args.OldText != "", "edit old_text must not be empty")
 
 	count := strings.Count(before, args.OldText)
 	if count == 0 {
@@ -134,19 +122,15 @@ func editContent(before string, args editParams) (string, int, error) {
 	}
 	if args.ReplaceAll {
 		after := strings.ReplaceAll(before, args.OldText, args.NewText)
-		must(len(after) >= 0, "replace_all output length must be non-negative")
-		must(count > 0, "replace_all count must be positive")
+
 		return after, count, nil
 	}
 	after := strings.Replace(before, args.OldText, args.NewText, 1)
-	must(count == 1, "single replace requires one match")
-	must(len(after) >= 0, "single replace output length must be non-negative")
+
 	return after, 1, nil
 }
 
 func editSummary(args editParams, count int) string {
-	must(args.Path != "", "edit summary path must not be empty")
-	must(count > 0, "edit summary count must be positive")
 
 	oldText := strings.ReplaceAll(args.OldText, "\n", "\\n")
 	newText := strings.ReplaceAll(args.NewText, "\n", "\\n")
@@ -154,7 +138,6 @@ func editSummary(args editParams, count int) string {
 		"--- %s\n+++ %s\n@@ replaced %d occurrence(s) @@\n-%s\n+%s",
 		args.Path, args.Path, count, oldText, newText,
 	)
-	must(strings.Contains(out, "@@"), "edit summary missing hunk marker")
-	must(strings.Contains(out, "--- "), "edit summary missing old file marker")
+
 	return out
 }

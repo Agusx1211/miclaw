@@ -19,8 +19,7 @@ type lsParams struct {
 }
 
 func lsTool() Tool {
-	must(len("ls") > 0, "ls tool name is empty")
-	must(len("List directory entries with type and size") > 0, "ls tool has description")
+
 	return tool{
 		name: "ls",
 		desc: "List directory entries with type and size",
@@ -38,18 +37,13 @@ func lsTool() Tool {
 }
 
 func runLS(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-	must(ctx != nil, "run context is nil")
-	must(call.Name == "ls", "run called with wrong tool name")
+
 	params, err := parseLSParams(call.Parameters)
 	if err != nil {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
 	root := filepath.Clean(params.Path)
-	info, err := os.Stat(root)
-	if err != nil {
-		return ToolResult{Content: err.Error(), IsError: true}, nil
-	}
-	must(info.IsDir(), "ls target is not a directory")
+
 	var lines []string
 	if params.Depth == 1 {
 		entries, err := os.ReadDir(root)
@@ -76,12 +70,12 @@ func runLS(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 }
 
 func parseLSParams(raw json.RawMessage) (lsParams, error) {
-	must(len(raw) > 1, "ls parameters are empty")
+
 	var params lsParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return lsParams{}, err
 	}
-	must(params.Path != "", "ls path is required")
+
 	if params.Depth == 0 {
 		params.Depth = 1
 	}
@@ -92,13 +86,12 @@ func parseLSParams(raw json.RawMessage) (lsParams, error) {
 }
 
 func listTreeEntries(base string, maxDepth int, showHidden bool, prefix string, level int, out *[]string) error {
-	must(base != "", "listTreeEntries base is empty")
-	must(maxDepth > 0, "maxDepth must be positive")
+
 	entries, err := os.ReadDir(base)
 	if err != nil {
 		return err
 	}
-	must(level > 0, "tree level must be positive")
+
 	filtered := make([]os.DirEntry, 0, len(entries))
 	for _, entry := range entries {
 		if !showHidden && strings.HasPrefix(entry.Name(), ".") {
@@ -130,14 +123,12 @@ func listTreeEntries(base string, maxDepth int, showHidden bool, prefix string, 
 }
 
 func formatEntry(name string, info os.FileInfo) string {
-	must(name != "", "entry name is required")
-	must(info != nil, "entry info is nil")
+
 	return fmt.Sprintf("%s (%s, %d)", name, entryType(info), info.Size())
 }
 
 func entryType(info os.FileInfo) string {
-	must(info != nil, "entry info is nil")
-	must(info.Mode() != 0, "entry mode is zero")
+
 	if info.Mode()&os.ModeSymlink != 0 {
 		return "symlink"
 	}

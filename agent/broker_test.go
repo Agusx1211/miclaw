@@ -130,8 +130,8 @@ func TestBrokerPublishNonBlockingOnFullBuffer(t *testing.T) {
 func TestBrokerConcurrentPublishSubscribe(t *testing.T) {
 	b := NewBroker[int]()
 	const (
-		subscribers = 8
-		publishers  = 4
+		subscribers  = 8
+		publishers   = 4
 		perPublisher = 500
 	)
 

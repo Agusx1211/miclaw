@@ -17,12 +17,11 @@ const (
 )
 
 func withRetry(ctx context.Context, maxRetries int, fn func() (*http.Response, error)) (*http.Response, error) {
-	must(ctx != nil, "context is nil")
-	must(fn != nil, "retry function is nil")
+
 	if maxRetries <= 0 {
 		maxRetries = defaultMaxRetries
 	}
-	must(maxRetries > 0, "max retries must be positive")
+
 	attempt := 0
 	for {
 		if err := ctx.Err(); err != nil {
@@ -32,7 +31,7 @@ func withRetry(ctx context.Context, maxRetries int, fn func() (*http.Response, e
 		if err != nil {
 			return nil, err
 		}
-		must(r != nil, "retry function returned nil response")
+
 		if !isRetriableStatus(r.StatusCode) {
 			return r, nil
 		}
@@ -51,14 +50,12 @@ func withRetry(ctx context.Context, maxRetries int, fn func() (*http.Response, e
 }
 
 func isRetriableStatus(code int) bool {
-	must(code >= 100, "status code below HTTP range")
-	must(code <= 599, "status code above HTTP range")
+
 	return code == http.StatusTooManyRequests || code == 529
 }
 
 func retryDelay(attempt int, header string) time.Duration {
-	must(attempt >= 0, "attempt cannot be negative")
-	must(attempt < 62, "attempt too large for shifting")
+
 	h := strings.TrimSpace(header)
 	if d, ok := parseRetryAfter(h); ok {
 		return d
@@ -69,14 +66,12 @@ func retryDelay(attempt int, header string) time.Duration {
 	}
 	j := time.Duration(float64(d) * backoffJitter * rand.Float64())
 	wait := d + j
-	must(wait >= d, "retry delay overflow")
-	must(wait > 0, "retry delay must be positive")
+
 	return wait
 }
 
 func parseRetryAfter(v string) (time.Duration, bool) {
-	must(v == strings.TrimSpace(v), "retry-after value must be trimmed")
-	must(!strings.Contains(v, "\n"), "retry-after value contains newline")
+
 	if v == "" {
 		return 0, false
 	}
@@ -99,8 +94,7 @@ func parseRetryAfter(v string) (time.Duration, bool) {
 }
 
 func waitForRetry(ctx context.Context, d time.Duration) error {
-	must(ctx != nil, "context is nil")
-	must(d >= 0, "retry delay cannot be negative")
+
 	if d == 0 {
 		select {
 		case <-ctx.Done():

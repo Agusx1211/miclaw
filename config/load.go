@@ -30,18 +30,7 @@ const (
 	defaultCitations      = "auto"
 )
 
-func must(ok bool, msg string) {
-	if msg == "" {
-		panic("assertion message must not be empty")
-	}
-	if !ok {
-		panic(msg)
-	}
-}
-
 func Load(path string) (*Config, error) {
-	must(path != "", "config path must not be empty")
-	must(strings.TrimSpace(path) != "", "config path must not be blank")
 
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -60,14 +49,10 @@ func Load(path string) (*Config, error) {
 		return nil, err
 	}
 
-	must(c.Workspace != "", "workspace must not be empty after load")
-	must(c.StatePath != "", "state path must not be empty after load")
 	return &c, nil
 }
 
 func applyDefaults(c *Config) {
-	must(c != nil, "config pointer must not be nil")
-	must(defaultTextChunkLimit > 0, "text chunk default must be positive")
 
 	applyCoreDefaults(c)
 	applyProviderDefaults(&c.Provider)
@@ -76,13 +61,9 @@ func applyDefaults(c *Config) {
 	applySandboxDefaults(&c.Sandbox)
 	applyMemoryDefaults(&c.Memory)
 
-	must(c.Workspace != "", "workspace defaulting failed")
-	must(c.StatePath != "", "state path defaulting failed")
 }
 
 func applyCoreDefaults(c *Config) {
-	must(c != nil, "config pointer must not be nil")
-	must(defaultWorkspace != "", "default workspace must not be empty")
 
 	if c.Workspace == "" {
 		c.Workspace = defaultWorkspace
@@ -91,13 +72,9 @@ func applyCoreDefaults(c *Config) {
 		c.StatePath = defaultStatePath
 	}
 
-	must(c.Workspace != "", "workspace must not be empty after defaults")
-	must(c.StatePath != "", "state path must not be empty after defaults")
 }
 
 func applyProviderDefaults(p *ProviderConfig) {
-	must(p != nil, "provider config pointer must not be nil")
-	must(defaultMaxTokens > 0, "default max tokens must be positive")
 
 	if p.BaseURL == "" {
 		switch p.Backend {
@@ -116,12 +93,9 @@ func applyProviderDefaults(p *ProviderConfig) {
 		p.APIKey = "lmstudio"
 	}
 
-	must(p.MaxTokens > 0, "provider max tokens must be positive after defaults")
 }
 
 func applySignalDefaults(s *SignalConfig) {
-	must(s != nil, "signal config pointer must not be nil")
-	must(defaultSignalHTTPPort > 0, "default signal HTTP port must be positive")
 
 	if s.HTTPHost == "" {
 		s.HTTPHost = defaultSignalHTTPHost
@@ -145,13 +119,9 @@ func applySignalDefaults(s *SignalConfig) {
 		s.MediaMaxMB = defaultMediaMaxMB
 	}
 
-	must(s.TextChunkLimit > 0, "signal text chunk limit must be positive after defaults")
-	must(s.MediaMaxMB > 0, "signal media max MB must be positive after defaults")
 }
 
 func applyWebhookDefaults(w *WebhookConfig) {
-	must(w != nil, "webhook config pointer must not be nil")
-	must(defaultWebhookListen != "", "default webhook listen must not be empty")
 
 	if w.Listen == "" {
 		w.Listen = defaultWebhookListen
@@ -162,13 +132,9 @@ func applyWebhookDefaults(w *WebhookConfig) {
 		}
 	}
 
-	must(w.Listen != "", "webhook listen must not be empty after defaults")
-	must(len(w.Hooks) == 0 || w.Hooks[0].Format != "", "webhook hook format defaulting failed")
 }
 
 func applySandboxDefaults(s *SandboxConfig) {
-	must(s != nil, "sandbox config pointer must not be nil")
-	must(defaultSandboxNetwork != "", "default sandbox network must not be empty")
 
 	if s.Network == "" {
 		s.Network = defaultSandboxNetwork
@@ -182,13 +148,9 @@ func applySandboxDefaults(s *SandboxConfig) {
 		}
 	}
 
-	must(s.Network != "", "sandbox network must not be empty after defaults")
-	must(s.HostUser != "", "sandbox host user must not be empty after defaults")
 }
 
 func applyMemoryDefaults(m *MemoryConfig) {
-	must(m != nil, "memory config pointer must not be nil")
-	must(defaultResults > 0, "default memory results must be positive")
 
 	if m.MinScore == 0 {
 		m.MinScore = defaultMinScore
@@ -200,13 +162,9 @@ func applyMemoryDefaults(m *MemoryConfig) {
 		m.Citations = defaultCitations
 	}
 
-	must(m.DefaultResults > 0, "memory default results must be positive after defaults")
-	must(m.Citations != "", "memory citations must not be empty after defaults")
 }
 
 func expandPaths(c *Config) error {
-	must(c != nil, "config pointer must not be nil")
-	must(c.Workspace != "", "workspace must be set before expansion")
 
 	w, err := expandHome(c.Workspace)
 	if err != nil {
@@ -219,14 +177,10 @@ func expandPaths(c *Config) error {
 	c.Workspace = w
 	c.StatePath = s
 
-	must(c.Workspace != "", "workspace expansion produced empty path")
-	must(c.StatePath != "", "state path expansion produced empty path")
 	return nil
 }
 
 func expandHome(p string) (string, error) {
-	must(p != "", "path must not be empty")
-	must(strings.TrimSpace(p) == p, "path must be trimmed")
 
 	if p[0] != '~' {
 		return p, nil
@@ -236,20 +190,18 @@ func expandHome(p string) (string, error) {
 		return "", fmt.Errorf("resolve home dir: %v", err)
 	}
 	if p == "~" {
-		must(h != "", "home dir must not be empty")
+
 		return h, nil
 	}
 	if strings.HasPrefix(p, "~/") {
 		o := filepath.Join(h, p[2:])
-		must(o != "", "expanded path must not be empty")
+
 		return o, nil
 	}
 	return "", fmt.Errorf("unsupported home path %q", p)
 }
 
 func validate(c Config) error {
-	must(c.Workspace != "", "workspace must be set before validation")
-	must(c.StatePath != "", "state path must be set before validation")
 
 	if err := validateProvider(c.Provider); err != nil {
 		return err
@@ -267,15 +219,11 @@ func validate(c Config) error {
 		return err
 	}
 
-	must(c.Provider.Backend != "", "provider backend missing after validation")
-	must(c.Provider.Model != "", "provider model missing after validation")
 	return nil
 }
 
 func validateProvider(p ProviderConfig) error {
 	v := map[string]bool{"lmstudio": true, "openrouter": true, "codex": true}
-	must(len(v) == 3, "provider backend set must contain three values")
-	must(v["lmstudio"], "provider backend set missing lmstudio")
 
 	if !v[p.Backend] {
 		return fmt.Errorf("provider.backend must be one of lmstudio, openrouter, codex")
@@ -297,8 +245,6 @@ func validateProvider(p ProviderConfig) error {
 
 func validateSignal(s SignalConfig) error {
 	v := map[string]bool{"allowlist": true, "open": true, "disabled": true}
-	must(len(v) == 3, "signal policy set must contain three values")
-	must(v["open"], "signal policy set missing open")
 
 	if !s.Enabled {
 		return nil
@@ -334,8 +280,6 @@ func validateSignal(s SignalConfig) error {
 
 func validateWebhooks(w WebhookConfig) error {
 	v := map[string]bool{"text": true, "json": true}
-	must(len(v) == 2, "webhook format set must contain two values")
-	must(v["text"], "webhook format set missing text")
 
 	if !w.Enabled {
 		return nil
@@ -365,8 +309,6 @@ func validateWebhooks(w WebhookConfig) error {
 
 func validateSandbox(s SandboxConfig) error {
 	v := map[string]bool{"ro": true, "rw": true}
-	must(len(v) == 2, "sandbox mount mode set must contain two values")
-	must(v["rw"], "sandbox mount mode set missing rw")
 
 	if !s.Enabled {
 		return nil
@@ -398,8 +340,6 @@ func validateSandbox(s SandboxConfig) error {
 
 func validateMemory(m MemoryConfig) error {
 	v := map[string]bool{"on": true, "off": true, "auto": true}
-	must(len(v) == 3, "memory citation set must contain three values")
-	must(v["auto"], "memory citation set missing auto")
 
 	if !m.Enabled {
 		return nil

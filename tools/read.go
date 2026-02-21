@@ -36,8 +36,7 @@ type rawReadParams struct {
 func ReadTool() Tool {
 	name := "read"
 	desc := "Read file contents with line numbers"
-	must(name != "", "read tool name missing")
-	must(desc != "", "read tool description missing")
+
 	return tool{
 		name: name,
 		desc: desc,
@@ -60,13 +59,12 @@ func ReadTool() Tool {
 			},
 		},
 		runFn: func(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-			must(ctx != nil, "context is required")
+
 			params, err := parseReadParams(call.Parameters)
 			if err != nil {
 				return ToolResult{IsError: true, Content: err.Error()}, nil
 			}
-			must(params.Path != "", "path is required")
-			must(params.Limit >= 0, "limit must be non-negative")
+
 			content, err := readFileContent(params.Path, params.Offset, params.Limit)
 			if err != nil {
 				return ToolResult{IsError: true, Content: err.Error()}, nil
@@ -77,7 +75,7 @@ func ReadTool() Tool {
 }
 
 func parseReadParams(raw json.RawMessage) (readParams, error) {
-	must(len(raw) > 0, "read tool parameters missing")
+
 	var params rawReadParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return readParams{}, fmt.Errorf("invalid read parameters: %w", err)
@@ -90,15 +88,12 @@ func parseReadParams(raw json.RawMessage) (readParams, error) {
 	if params.Limit != nil {
 		limit = *params.Limit
 	}
-	must(offset >= 0, "offset must be non-negative")
-	must(limit >= 0, "limit must be non-negative")
+
 	return readParams{Path: params.Path, Offset: offset, Limit: limit}, nil
 }
 
 func readFileContent(path string, offset, limit int) (string, error) {
-	must(path != "", "path is required")
-	must(offset >= 0, "offset must be non-negative")
-	must(limit >= 0, "limit must be non-negative")
+
 	if limit == 0 {
 		return "", nil
 	}
@@ -143,8 +138,7 @@ func readFileContent(path string, offset, limit int) (string, error) {
 }
 
 func appendReadLine(output *bytes.Buffer, lineNo int, text string) bool {
-	must(output != nil, "output buffer required")
-	must(lineNo > 0, "line number must be positive")
+
 	line := fmt.Sprintf("%6d\t%s\n", lineNo, text)
 	if output.Len()+len(line) <= readMaxOutputBytes {
 		output.WriteString(line)

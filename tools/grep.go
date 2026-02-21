@@ -26,8 +26,7 @@ type grepParams struct {
 }
 
 func grepTool() Tool {
-	must(len("grep") > 0, "grep tool name is empty")
-	must(len("Search file contents by regex with optional context and .gitignore support") > 0, "grep tool has description")
+
 	return tool{
 		name: "grep",
 		desc: "Search file contents by regex with optional context and .gitignore support",
@@ -54,14 +53,13 @@ func grepTool() Tool {
 }
 
 func runGrep(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
-	must(ctx != nil, "run context must not be nil")
-	must(call.Name == "grep", "run called with wrong tool name")
+
 	params, err := parseGrepParams(call.Parameters)
 	if err != nil {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
 	root := filepath.Clean(params.Path)
-	must(root != "", "grep root path is empty")
+
 	if _, err := os.Stat(root); err != nil {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
@@ -121,12 +119,12 @@ func runGrep(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 }
 
 func parseGrepParams(raw json.RawMessage) (grepParams, error) {
-	must(len(raw) >= 2, "grep parameters are empty")
+
 	var params grepParams
 	if err := json.Unmarshal(raw, &params); err != nil {
 		return grepParams{}, err
 	}
-	must(params.Pattern != "", "grep pattern is required")
+
 	if params.Path == "" {
 		params.Path = "."
 	}
@@ -140,8 +138,7 @@ func parseGrepParams(raw json.RawMessage) (grepParams, error) {
 }
 
 func searchMatchesInFile(relPath, absPath string, re *regexp.Regexp, contextLines int) ([]string, error) {
-	must(relPath != "", "relative file path is empty")
-	must(absPath != "", "absolute file path is empty")
+
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return nil, err
@@ -171,8 +168,7 @@ func searchMatchesInFile(relPath, absPath string, re *regexp.Regexp, contextLine
 }
 
 func loadGitignorePatterns(root string) ([]string, error) {
-	must(root != "", "gitignore root is empty")
-	must(filepath.Clean(root) == root, "gitignore root must be cleaned")
+
 	ignorePath := filepath.Join(root, ".gitignore")
 	raw, err := os.ReadFile(ignorePath)
 	if os.IsNotExist(err) {
@@ -189,8 +185,6 @@ func loadGitignorePatterns(root string) ([]string, error) {
 			continue
 		}
 		if strings.HasPrefix(pattern, "!") {
-			pattern = strings.TrimSpace(strings.TrimPrefix(pattern, "!"))
-			must(pattern != "", "gitignore negation pattern is empty")
 			continue
 		}
 		pattern = strings.TrimPrefix(strings.TrimSuffix(filepath.ToSlash(pattern), "/"), "./")
@@ -200,12 +194,12 @@ func loadGitignorePatterns(root string) ([]string, error) {
 }
 
 func isIgnored(path string, patterns []string) bool {
-	must(path != "", "path for ignore check is empty")
+
 	if len(patterns) == 0 {
 		return false
 	}
 	for _, pattern := range patterns {
-		must(pattern != "", "gitignore pattern is empty")
+
 		if strings.Contains(pattern, "/") {
 			if matchPathPattern(pattern, path) {
 				return true
@@ -220,8 +214,7 @@ func isIgnored(path string, patterns []string) bool {
 }
 
 func isBinaryContent(raw []byte) bool {
-	must(raw != nil, "file content is nil")
-	must(len(raw) >= 0, "invalid file content length")
+
 	for _, b := range raw {
 		if b == 0 {
 			return true
