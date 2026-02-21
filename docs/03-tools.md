@@ -194,7 +194,7 @@ type ExecParams struct {
 - Output limit: 100K chars (completed), 10K chars (background)
 - Background processes stored in process registry
 
-No sandbox. No security modes. No approval system. The agent runs commands directly. The user controls what the agent can do through the system prompt and AGENTS.md instructions.
+When running inside the sandbox, `exec` checks if the command matches a configured host command and routes it through SSH automatically. The agent doesn't need to know about SSH — it just calls `exec`. See [08-sandboxing.md](./08-sandboxing.md).
 
 ### process
 

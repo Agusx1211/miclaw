@@ -174,6 +174,8 @@ Parent receives result as tool call output
 
 ### Sub-agent Constraints
 
+Sub-agents run as goroutines in the same process, in the same container as the main agent. They are not separate containers or processes.
+
 | Aspect | Main Agent | Sub-agent |
 |--------|-----------|-----------|
 | Tools | All 20 | 6 (read-only + memory) |
@@ -184,6 +186,7 @@ Parent receives result as tool call output
 | Bootstrap files | All | AGENTS.md only |
 | Has own session | Yes | Yes (child) |
 | Cost tracking | Direct | Propagated to parent |
+| Container | Shared | Shared |
 
 ### No Recursive Spawning
 

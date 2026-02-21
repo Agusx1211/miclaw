@@ -83,6 +83,11 @@ When context tokens exceed the threshold, the conversation is summarized by the 
 
 Three backends only: LM Studio (local, OpenAI-compatible), OpenRouter (cloud, multi-model), OpenAI Codex (OAuth or API key). All use streaming. All support tool calling.
 
+### 8. Sandboxing
+**Document:** [08-sandboxing.md](./08-sandboxing.md)
+
+Everything runs inside a single long-lived Docker container — the main agent and all sub-agents share it. Three knobs: network access (none/bridge/host/custom), filesystem mounts (bind mounts with ro/rw), and host command execution (SSH forced commands with an allowlisted wrapper). No Docker socket mounting. No per-request container restarts.
+
 ## Data Flow: Complete Request Lifecycle
 
 ```
@@ -137,7 +142,6 @@ Three backends only: LM Studio (local, OpenAI-compatible), OpenRouter (cloud, mu
 - No browser tool. No canvas tool.
 - No web_search or web_fetch tools (use exec + curl if needed).
 - No gateway admin tool.
-- No sandbox/container system.
 - No permission profiles or policy pipelines. Tool access is all-or-nothing per agent type (main vs sub-agent).
 - No Anthropic, Google, or Ollama backends.
 - No pairing system for DMs (use allowlist or open).
