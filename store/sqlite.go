@@ -11,19 +11,13 @@ import (
 
 type SQLiteStore struct {
 	db       *sql.DB
-	Sessions SessionStore
 	Messages MessageStore
-}
-
-type sqliteSessionStore struct {
-	db *sql.DB
 }
 
 type sqliteMessageStore struct {
 	db *sql.DB
 }
 
-var _ SessionStore = (*sqliteSessionStore)(nil)
 var _ MessageStore = (*sqliteMessageStore)(nil)
 
 type rowScanner interface {
@@ -42,7 +36,6 @@ func OpenSQLite(path string) (*SQLiteStore, error) {
 		return nil, err
 	}
 	s := &SQLiteStore{db: db}
-	s.Sessions = &sqliteSessionStore{db: db}
 	s.Messages = &sqliteMessageStore{db: db}
 
 	return s, nil
@@ -53,11 +46,6 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *SQLiteStore) SessionStore() SessionStore {
-
-	return s.Sessions
-}
-
 func (s *SQLiteStore) MessageStore() MessageStore {
 
 	return s.Messages
@@ -65,12 +53,6 @@ func (s *SQLiteStore) MessageStore() MessageStore {
 
 func initSchema(db *sql.DB) error {
 
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return err
-	}
-	if _, err := db.Exec(schemaSessions); err != nil {
-		return err
-	}
 	if _, err := db.Exec(schemaMessages); err != nil {
 		return err
 	}
@@ -81,127 +63,16 @@ func initSchema(db *sql.DB) error {
 	return nil
 }
 
-const schemaSessions = `
-CREATE TABLE IF NOT EXISTS sessions (
-	id TEXT PRIMARY KEY,
-	parent_session_id TEXT,
-	title TEXT,
-	message_count INTEGER,
-	prompt_tokens INTEGER,
-	completion_tokens INTEGER,
-	summary_message_id TEXT,
-	cost REAL,
-	created_at DATETIME,
-	updated_at DATETIME
-)`
-
 const schemaMessages = `
 CREATE TABLE IF NOT EXISTS messages (
 	id TEXT PRIMARY KEY,
-	session_id TEXT,
 	role TEXT,
 	parts_json TEXT,
-	created_at DATETIME,
-	FOREIGN KEY(session_id) REFERENCES sessions(id) ON DELETE CASCADE
+	created_at DATETIME
 )`
 
 const schemaMessagesIndex = `
-CREATE INDEX IF NOT EXISTS idx_messages_session ON messages(session_id, created_at)`
-
-func (s *sqliteSessionStore) Create(session *model.Session) error {
-
-	_, err := s.db.Exec(
-		`INSERT INTO sessions (
-			id, parent_session_id, title, message_count, prompt_tokens,
-			completion_tokens, summary_message_id, cost, created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		session.ID,
-		session.ParentSessionID,
-		session.Title,
-		session.MessageCount,
-		session.PromptTokens,
-		session.CompletionTokens,
-		session.SummaryMessageID,
-		session.Cost,
-		timeToDB(session.CreatedAt),
-		timeToDB(session.UpdatedAt),
-	)
-	return err
-}
-
-func (s *sqliteSessionStore) Get(id string) (*model.Session, error) {
-
-	row := s.db.QueryRow(
-		`SELECT id, parent_session_id, title, message_count, prompt_tokens,
-		 completion_tokens, summary_message_id, cost, created_at, updated_at
-		 FROM sessions WHERE id = ?`,
-		id,
-	)
-	return scanSession(row)
-}
-
-func (s *sqliteSessionStore) Update(session *model.Session) error {
-
-	_, err := s.db.Exec(
-		`UPDATE sessions SET
-			parent_session_id = ?,
-			title = ?,
-			message_count = ?,
-			prompt_tokens = ?,
-			completion_tokens = ?,
-			summary_message_id = ?,
-			cost = ?,
-			created_at = ?,
-			updated_at = ?
-		 WHERE id = ?`,
-		session.ParentSessionID,
-		session.Title,
-		session.MessageCount,
-		session.PromptTokens,
-		session.CompletionTokens,
-		session.SummaryMessageID,
-		session.Cost,
-		timeToDB(session.CreatedAt),
-		timeToDB(session.UpdatedAt),
-		session.ID,
-	)
-	return err
-}
-
-func (s *sqliteSessionStore) List(limit, offset int) ([]*model.Session, error) {
-
-	rows, err := s.db.Query(
-		`SELECT id, parent_session_id, title, message_count, prompt_tokens,
-		 completion_tokens, summary_message_id, cost, created_at, updated_at
-		 FROM sessions ORDER BY created_at, id LIMIT ? OFFSET ?`,
-		limit,
-		offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]*model.Session, 0)
-	for rows.Next() {
-		v, err := scanSession(rows)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, v)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return out, nil
-}
-
-func (s *sqliteSessionStore) Delete(id string) error {
-
-	_, err := s.db.Exec(`DELETE FROM sessions WHERE id = ?`, id)
-	return err
-}
+CREATE INDEX IF NOT EXISTS idx_messages_created ON messages(created_at, id)`
 
 func (s *sqliteMessageStore) Create(msg *model.Message) error {
 
@@ -210,10 +81,9 @@ func (s *sqliteMessageStore) Create(msg *model.Message) error {
 		return err
 	}
 	_, err = s.db.Exec(
-		`INSERT INTO messages (id, session_id, role, parts_json, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO messages (id, role, parts_json, created_at)
+		 VALUES (?, ?, ?, ?)`,
 		msg.ID,
-		msg.SessionID,
 		string(msg.Role),
 		raw,
 		timeToDB(msg.CreatedAt),
@@ -224,20 +94,19 @@ func (s *sqliteMessageStore) Create(msg *model.Message) error {
 func (s *sqliteMessageStore) Get(id string) (*model.Message, error) {
 
 	row := s.db.QueryRow(
-		`SELECT id, session_id, role, parts_json, created_at
+		`SELECT id, role, parts_json, created_at
 		 FROM messages WHERE id = ?`,
 		id,
 	)
 	return scanMessage(row)
 }
 
-func (s *sqliteMessageStore) ListBySession(sessionID string, limit, offset int) ([]*model.Message, error) {
+func (s *sqliteMessageStore) List(limit, offset int) ([]*model.Message, error) {
 
 	rows, err := s.db.Query(
-		`SELECT id, session_id, role, parts_json, created_at
-		 FROM messages WHERE session_id = ?
+		`SELECT id, role, parts_json, created_at
+		 FROM messages
 		 ORDER BY created_at, id LIMIT ? OFFSET ?`,
-		sessionID,
 		limit,
 		offset,
 	)
@@ -261,16 +130,16 @@ func (s *sqliteMessageStore) ListBySession(sessionID string, limit, offset int) 
 	return out, nil
 }
 
-func (s *sqliteMessageStore) DeleteBySession(sessionID string) error {
+func (s *sqliteMessageStore) DeleteAll() error {
 
-	_, err := s.db.Exec(`DELETE FROM messages WHERE session_id = ?`, sessionID)
+	_, err := s.db.Exec(`DELETE FROM messages`)
 	return err
 }
 
-func (s *sqliteMessageStore) CountBySession(sessionID string) (int, error) {
+func (s *sqliteMessageStore) Count() (int, error) {
 
 	var n int
-	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages WHERE session_id = ?`, sessionID).Scan(&n)
+	err := s.db.QueryRow(`SELECT COUNT(*) FROM messages`).Scan(&n)
 	if err != nil {
 		return 0, err
 	}
@@ -278,13 +147,13 @@ func (s *sqliteMessageStore) CountBySession(sessionID string) (int, error) {
 	return n, nil
 }
 
-func (s *sqliteMessageStore) ReplaceSessionMessages(sessionID string, msgs []*model.Message) error {
+func (s *sqliteMessageStore) ReplaceAll(msgs []*model.Message) error {
 
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(`DELETE FROM messages WHERE session_id = ?`, sessionID); err != nil {
+	if _, err := tx.Exec(`DELETE FROM messages`); err != nil {
 		_ = tx.Rollback()
 		return err
 	}
@@ -296,10 +165,9 @@ func (s *sqliteMessageStore) ReplaceSessionMessages(sessionID string, msgs []*mo
 			return err
 		}
 		_, err = tx.Exec(
-			`INSERT INTO messages (id, session_id, role, parts_json, created_at)
-			 VALUES (?, ?, ?, ?, ?)`,
+			`INSERT INTO messages (id, role, parts_json, created_at)
+			 VALUES (?, ?, ?, ?)`,
 			msg.ID,
-			msg.SessionID,
 			string(msg.Role),
 			raw,
 			timeToDB(msg.CreatedAt),
@@ -317,48 +185,13 @@ func (s *sqliteMessageStore) ReplaceSessionMessages(sessionID string, msgs []*mo
 	return nil
 }
 
-func scanSession(r rowScanner) (*model.Session, error) {
-
-	v := &model.Session{}
-	var createdAt string
-	var updatedAt string
-	err := r.Scan(
-		&v.ID,
-		&v.ParentSessionID,
-		&v.Title,
-		&v.MessageCount,
-		&v.PromptTokens,
-		&v.CompletionTokens,
-		&v.SummaryMessageID,
-		&v.Cost,
-		&createdAt,
-		&updatedAt,
-	)
-	if err != nil {
-		return nil, err
-	}
-	created, err := timeFromDB(createdAt)
-	if err != nil {
-		return nil, err
-	}
-	updated, err := timeFromDB(updatedAt)
-	if err != nil {
-		return nil, err
-	}
-	v.CreatedAt = created
-	v.UpdatedAt = updated
-
-	return v, nil
-}
-
 func scanMessage(r rowScanner) (*model.Message, error) {
 
 	var id string
-	var sessionID string
 	var role string
 	var raw string
 	var createdAt string
-	if err := r.Scan(&id, &sessionID, &role, &raw, &createdAt); err != nil {
+	if err := r.Scan(&id, &role, &raw, &createdAt); err != nil {
 		return nil, err
 	}
 	v, err := decodeMessage(raw)

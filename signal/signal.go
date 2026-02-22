@@ -345,3 +345,11 @@ func (c *Client) SendTyping(ctx context.Context, recipient string) error {
 		"account":   c.account,
 	})
 }
+
+func (c *Client) SendTypingStop(ctx context.Context, recipient string) error {
+	return c.rpc(ctx, "sendTyping", map[string]any{
+		"recipient": []string{recipient},
+		"account":   c.account,
+		"stop":      true,
+	})
+}

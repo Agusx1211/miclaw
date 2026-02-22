@@ -39,6 +39,7 @@ func buildFullSections(params SystemPromptParams) []promptSection {
 	sections := []promptSection{
 		{name: "Identity", content: identitySection(params.Workspace)},
 		{name: "Tooling", content: toolingSection()},
+		{name: "Messaging", content: messagingSection()},
 		{name: "Tool Call Style", content: toolCallStyleSection()},
 		{name: "Safety", content: safetySection()},
 		{name: "Skills", content: skillsSection(params.Skills)},
@@ -58,6 +59,7 @@ func buildMinimalSections(params SystemPromptParams) []promptSection {
 	sections := []promptSection{
 		{name: "Identity", content: identitySection(params.Workspace)},
 		{name: "Tooling", content: toolingSection()},
+		{name: "Messaging", content: messagingSection()},
 		{name: "Workspace", content: strings.TrimSpace(params.Workspace.User)},
 		{name: "Workspace Files", content: workspaceFilesSection(params.Workspace, true)},
 		{name: "Heartbeat", content: strings.TrimSpace(params.Heartbeat)},
@@ -91,6 +93,16 @@ func toolCallStyleSection() string {
 	out := strings.TrimSpace(`- Narrate intent before substantial tool actions.
 - Skip narration for trivial reads or lookups.
 - Keep progress updates short and factual.`)
+
+	return out
+}
+
+func messagingSection() string {
+	out := strings.TrimSpace(`- Your text output is private internal thinking.
+- To communicate externally, you must call the message tool.
+- Use the typing tool to control Signal typing indicators (on/off) when needed.
+- Source tags are included inline (for example: [signal:dm:user-1], [webhook:deploy], [cron:heartbeat]).
+- When there is no pending work, stop.`)
 
 	return out
 }

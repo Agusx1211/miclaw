@@ -2,24 +2,20 @@ package tools
 
 import (
 	"context"
+	"time"
 
 	"github.com/agusx1211/miclaw/config"
 	"github.com/agusx1211/miclaw/memory"
-	"github.com/agusx1211/miclaw/provider"
-	"github.com/agusx1211/miclaw/store"
 )
 
 type MainToolDeps struct {
-	Sessions    store.SessionStore
-	Messages    store.MessageStore
-	Provider    provider.LLMProvider
 	Sandbox     config.SandboxConfig
 	Memory      *memory.Store
 	Embed       *memory.EmbedClient
 	Scheduler   *Scheduler
-	SendMessage func(ctx context.Context, recipient, content string) error
-	Model       string
-	IsActive    func() bool
+	SendMessage func(ctx context.Context, to, content string) error
+	StartTyping func(ctx context.Context, to string, duration time.Duration) error
+	StopTyping  func(ctx context.Context, to string) error
 }
 
 func MainAgentTools(deps MainToolDeps) []Tool {
@@ -34,31 +30,12 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		execToolWithSandbox(deps.Sandbox),
 		processTool(),
 		CronTool(deps.Scheduler),
-		agentsListTool(deps.Model, deps.IsActive),
-		sessionsListTool(deps.Sessions),
-		sessionsHistoryTool(deps.Sessions, deps.Messages),
-		sessionsSendTool(deps.Sessions, deps.Messages),
-		sessionsSpawnTool(deps.Sessions, deps.Messages, deps.Provider, deps.Memory, deps.Embed),
-		sessionsStatusTool(deps.Sessions, deps.Messages),
+		messageTool(deps.SendMessage),
 		MemorySearchTool(deps.Memory, deps.Embed),
 		MemoryGetTool(deps.Memory),
-		subagentsTool(),
 	}
-	if deps.SendMessage != nil {
-		tools = append(tools, messageTool(deps.SendMessage))
-	}
-
-	return tools
-}
-
-func SubAgentTools(store *memory.Store, embedClient *memory.EmbedClient) []Tool {
-	tools := []Tool{
-		ReadTool(),
-		grepTool(),
-		globTool(),
-		lsTool(),
-		MemorySearchTool(store, embedClient),
-		MemoryGetTool(store),
+	if deps.StartTyping != nil && deps.StopTyping != nil {
+		tools = append(tools, typingTool(deps.StartTyping, deps.StopTyping))
 	}
 
 	return tools

@@ -317,6 +317,30 @@ func TestRPCSendTyping(t *testing.T) {
 	}
 }
 
+func TestRPCSendTypingStop(t *testing.T) {
+	var gotReq rpcRequest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		json.Unmarshal(body, &gotReq)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"jsonrpc":"2.0","id":1,"result":{}}`)
+	}))
+	defer srv.Close()
+
+	c := NewClient(srv.URL, "+15551234567")
+	err := c.SendTypingStop(context.Background(), "+15559999999")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotReq.Method != "sendTyping" {
+		t.Fatalf("method = %q", gotReq.Method)
+	}
+	stop, ok := gotReq.Params["stop"].(bool)
+	if !ok || !stop {
+		t.Fatalf("stop flag = %#v", gotReq.Params["stop"])
+	}
+}
+
 func TestSSEListener(t *testing.T) {
 	gotAccount := make(chan string, 1)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

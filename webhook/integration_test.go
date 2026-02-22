@@ -126,7 +126,7 @@ func TestWebhookIntegrationUnsignedPostEnqueues(t *testing.T) {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
 	got := server.calls.snapshot()
-	if len(got) != 1 || got[0].content != "[webhook:unsigned] payload" || got[0].metadata["id"] != "unsigned" {
+	if len(got) != 1 || got[0].source != "webhook:unsigned" || got[0].content != "payload" || got[0].metadata["id"] != "unsigned" {
 		t.Fatalf("got=%+v", got)
 	}
 }
@@ -154,7 +154,7 @@ func TestWebhookIntegrationSignedValidPostEnqueues(t *testing.T) {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
 	got := server.calls.snapshot()
-	if len(got) != 1 || got[0].content != "[webhook:signed] "+body {
+	if len(got) != 1 || got[0].source != "webhook:signed" || got[0].content != body {
 		t.Fatalf("got=%+v", got)
 	}
 }
@@ -267,7 +267,7 @@ func TestWebhookIntegrationMultipleRapidPostsPreserveOrder(t *testing.T) {
 		t.Fatalf("len=%d", len(got))
 	}
 	for i := range got {
-		want := "[webhook:stream] event-" + strconv.Itoa(i)
+		want := "event-" + strconv.Itoa(i)
 		if got[i].content != want {
 			t.Fatalf("i=%d got=%q want=%q", i, got[i].content, want)
 		}
@@ -290,7 +290,7 @@ func TestWebhookIntegrationGracefulShutdownStopsServer(t *testing.T) {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
 	server.stop(t)
-	_, err = http.Get(server.base+"/health")
+	_, err = http.Get(server.base + "/health")
 	if err == nil {
 		t.Fatal("expected request to fail after shutdown")
 	}

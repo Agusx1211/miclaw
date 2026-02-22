@@ -10,7 +10,6 @@ const (
 	RoleTool      Role = model.RoleTool
 )
 
-type Session = model.Session
 type Message = model.Message
 
 type MessagePart = model.MessagePart

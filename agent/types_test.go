@@ -67,7 +67,6 @@ func assertPartEqual(t *testing.T, want, got MessagePart) {
 func TestMessagePartJSONRoundTripText(t *testing.T) {
 	msg := Message{
 		ID:        "m1",
-		SessionID: "s1",
 		Role:      RoleUser,
 		CreatedAt: time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
 		Parts:     []MessagePart{TextPart{Text: "hello"}},
@@ -97,7 +96,6 @@ func TestMessagePartJSONRoundTripToolCall(t *testing.T) {
 	}
 	msg := Message{
 		ID:        "m2",
-		SessionID: "s2",
 		Role:      RoleAssistant,
 		CreatedAt: time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
 		Parts:     []MessagePart{want},
@@ -126,7 +124,6 @@ func TestMessagePartJSONRoundTripBinary(t *testing.T) {
 	}
 	msg := Message{
 		ID:        "m3",
-		SessionID: "s3",
 		Role:      RoleUser,
 		CreatedAt: time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
 		Parts:     []MessagePart{want},
@@ -152,7 +149,6 @@ func TestMessagePartJSONRoundTripReasoning(t *testing.T) {
 	want := ReasoningPart{Text: "thinking step"}
 	msg := Message{
 		ID:        "m4",
-		SessionID: "s4",
 		Role:      RoleAssistant,
 		CreatedAt: time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
 		Parts:     []MessagePart{want},
@@ -182,7 +178,6 @@ func TestMessageJSONRoundTripMixedParts(t *testing.T) {
 	}
 	msg := Message{
 		ID:        "m5",
-		SessionID: "s5",
 		Role:      RoleAssistant,
 		CreatedAt: time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
 		Parts: []MessagePart{
@@ -205,7 +200,7 @@ func TestMessageJSONRoundTripMixedParts(t *testing.T) {
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("unmarshal failed: %v", err)
 	}
-	if got.ID != "m5" || got.SessionID != "s5" || got.Role != RoleAssistant {
+	if got.ID != "m5" || got.Role != RoleAssistant {
 		t.Fatalf("message metadata changed: %#v", got)
 	}
 	if len(got.Parts) != 6 {
@@ -222,7 +217,6 @@ func TestMessageJSONRoundTripMixedParts(t *testing.T) {
 func TestMessageJSONEmptyParts(t *testing.T) {
 	msg := Message{
 		ID:        "m6",
-		SessionID: "s6",
 		Role:      RoleUser,
 		CreatedAt: time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
 		Parts:     []MessagePart{},
@@ -240,31 +234,5 @@ func TestMessageJSONEmptyParts(t *testing.T) {
 	}
 	if len(got.Parts) != 0 {
 		t.Fatalf("expected no parts, got %d", len(got.Parts))
-	}
-}
-
-func TestSessionJSONRoundTrip(t *testing.T) {
-	want := Session{
-		ID:               "s1",
-		ParentSessionID:  "p1",
-		Title:            "title",
-		MessageCount:     7,
-		PromptTokens:     11,
-		CompletionTokens: 22,
-		SummaryMessageID: "m0",
-		Cost:             3.14,
-		CreatedAt:        time.Date(2026, 2, 20, 12, 0, 0, 0, time.UTC),
-		UpdatedAt:        time.Date(2026, 2, 21, 12, 0, 0, 0, time.UTC),
-	}
-	b, err := json.Marshal(want)
-	if err != nil {
-		t.Fatalf("marshal failed: %v", err)
-	}
-	var got Session
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatalf("unmarshal failed: %v", err)
-	}
-	if !reflect.DeepEqual(want, got) {
-		t.Fatalf("session round-trip mismatch: %v != %v", want, got)
 	}
 }

@@ -15,22 +15,8 @@ const (
 	RoleTool      Role = "tool"
 )
 
-type Session struct {
-	ID               string    `json:"id"`
-	ParentSessionID  string    `json:"parent_session_id"`
-	Title            string    `json:"title"`
-	MessageCount     int       `json:"message_count"`
-	PromptTokens     int       `json:"prompt_tokens"`
-	CompletionTokens int       `json:"completion_tokens"`
-	SummaryMessageID string    `json:"summary_message_id"`
-	Cost             float64   `json:"cost"`
-	CreatedAt        time.Time `json:"created_at"`
-	UpdatedAt        time.Time `json:"updated_at"`
-}
-
 type Message struct {
 	ID        string        `json:"id"`
-	SessionID string        `json:"session_id"`
 	Role      Role          `json:"role"`
 	Parts     []MessagePart `json:"parts"`
 	CreatedAt time.Time     `json:"created_at"`
@@ -86,7 +72,6 @@ type ToolResult = ToolResultPart
 
 type messageJSON struct {
 	ID        string            `json:"id"`
-	SessionID string            `json:"session_id"`
 	Role      Role              `json:"role"`
 	Parts     []json.RawMessage `json:"parts"`
 	CreatedAt time.Time         `json:"created_at"`
@@ -95,7 +80,6 @@ type messageJSON struct {
 func (m Message) MarshalJSON() ([]byte, error) {
 	w := messageJSON{
 		ID:        m.ID,
-		SessionID: m.SessionID,
 		Role:      m.Role,
 		Parts:     make([]json.RawMessage, 0, len(m.Parts)),
 		CreatedAt: m.CreatedAt,
@@ -125,7 +109,6 @@ func (m *Message) UnmarshalJSON(b []byte) error {
 	}
 	*m = Message{
 		ID:        w.ID,
-		SessionID: w.SessionID,
 		Role:      w.Role,
 		Parts:     parts,
 		CreatedAt: w.CreatedAt,

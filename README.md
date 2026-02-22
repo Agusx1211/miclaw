@@ -126,6 +126,19 @@ Requires `signal-cli` running as an HTTP daemon.
 | `text_chunk_limit` | `4000` | Max chars per outbound message |
 | `media_max_mb` | `8` | Max attachment size in MB |
 
+Signal runtime behavior:
+- Inbound events are injected into the single thread with source tags like `[signal:dm:<uuid>]` and `[signal:group:<id>]`.
+- Outbound replies use the `message` tool target format `signal:dm:<uuid>` or `signal:group:<id>`.
+- Typing starts when a Signal-triggered run starts, is refreshed while active, and is explicitly stopped when the run sleeps.
+- The `typing` tool is available for manual `on`/`off` control (with optional `seconds` timeout when turning `on`).
+
+Signal slash commands:
+
+| Command | Effect |
+|---------|--------|
+| `/new` | Cancel current run (if possible), clear thread history, reply `thread reset` |
+| `/compact` | Run context compaction on demand and reply when complete |
+
 ### Webhooks
 
 HTTP endpoints that inject payloads into the agent's conversation.
@@ -301,11 +314,11 @@ The Dockerfile builds a minimal Alpine image with the miclaw binary and an opens
                             |
              +--------------+--------------+
              |              |              |
-      +------+-----+ +-----+------+ +-----+------+
-      | System      | | Tool       | | Sub-agent  |
-      | Prompt      | | Execution  | | Spawning   |
-      | Builder     | | Pipeline   | | (read-only)|
-      +------+-----+ +-----+------+ +-----+------+
+      +------+-----+ +-----+------+
+      | System      | | Tool       |
+      | Prompt      | | Execution  |
+      | Builder     | | Pipeline   |
+      +------+-----+ +-----+------+
              |              |
       +------+-----+ +-----+------+
       | Workspace   | | LLM        |
@@ -315,22 +328,21 @@ The Dockerfile builds a minimal Alpine image with the miclaw binary and an opens
 
 **One agent, one thread.** All input channels (Signal, webhooks, cron) feed into a single conversation. The agent processes requests sequentially.
 
-### Tools (20)
+### Tools
 
 | Category | Tools |
 |----------|-------|
-| Filesystem | `read`, `write`, `edit`, `apply_patch`, `grep`, `glob`, `ls` |
+| Filesystem | `read`, `write`, `edit`, `patch`, `grep`, `glob`, `ls` |
 | Runtime | `exec`, `process` |
 | Automation | `cron` |
 | Messaging | `message` |
-| Sessions | `sessions_list`, `sessions_history`, `sessions_send`, `sessions_spawn`, `sessions_status`, `subagents`, `agents_list` |
 | Memory | `memory_search`, `memory_get` |
 
-Sub-agents get read-only access to 6 tools: `read`, `grep`, `glob`, `ls`, `memory_search`, `memory_get`.
+When Signal is enabled, the runtime also exposes `typing`.
 
 ### Context Compaction
 
-When conversation tokens exceed the threshold (default 200k), the agent summarizes the history into a structured 7-section summary and resets the conversation. The system prompt and last user request are preserved.
+Compaction is explicit (for example, `/compact`). The agent summarizes the current thread and replaces long history with the compacted summary state.
 
 ## Development
 
@@ -348,13 +360,14 @@ Detailed design documentation lives in [`docs/`](docs/):
 
 - [Architecture Overview](docs/00-architecture-overview.md)
 - [System Prompt, Memory & Skills](docs/01-system-prompt-memory-skills.md)
-- [Agent Loop & Sub-agents](docs/02-agent-loop-and-subagents.md)
+- [Agent Loop (Legacy Sub-agent Notes)](docs/02-agent-loop-and-subagents.md)
 - [Tools](docs/03-tools.md)
 - [Signal Integration](docs/04-signal-integration.md)
 - [Webhooks](docs/05-webhooks.md)
 - [Context Compaction](docs/06-context-compaction.md)
 - [LLM Backends](docs/07-llm-backends.md)
 - [Sandboxing](docs/08-sandboxing.md)
+- [Unified Thread & Tool Messaging](docs/09-unified-thread-and-tool-messaging.md)
 
 ## License
 

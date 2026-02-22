@@ -14,7 +14,8 @@ import (
 	"github.com/google/uuid"
 )
 
-const sessionMessageLimit = 1_000_000
+const threadMessageLimit = 1_000_000
+const traceTextLimit = 180
 
 type toolCallState struct {
 	id   string
@@ -22,73 +23,71 @@ type toolCallState struct {
 	args strings.Builder
 }
 
-func (a *Agent) processGeneration(ctx context.Context, input Input) error {
-	session, err := a.getOrCreateSession(input.SessionID)
-	if err != nil {
-		return err
-	}
-	msgs, err := a.messages.ListBySession(session.ID, sessionMessageLimit, 0)
-	if err != nil {
-		return err
-	}
-	user := newUserMessage(session.ID, input.Content)
-	if err := a.messages.Create(user); err != nil {
-		return err
-	}
-	msgs = append(msgs, user)
-	total := &provider.UsageInfo{}
+func (a *Agent) run(ctx context.Context) error {
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		hasToolCalls, err := a.streamAndHandle(ctx, session, msgs, a.tools)
-		if err != nil {
+		pending := a.pending.Drain()
+		if len(pending) == 0 {
+			return nil
+		}
+		a.tracef("pending=%d", len(pending))
+		if err := a.injectInputs(pending); err != nil {
 			return err
 		}
-		mergeUsage(total, a.takeLastUsage())
-		if !hasToolCalls {
-			break
+		for {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			hasToolCalls, err := a.streamAndHandle(ctx, a.tools)
+			if err != nil {
+				return err
+			}
+			if !hasToolCalls {
+				break
+			}
+			if more := a.pending.Drain(); len(more) > 0 {
+				if err := a.injectInputs(more); err != nil {
+					return err
+				}
+			}
 		}
-		msgs, err = a.messages.ListBySession(session.ID, sessionMessageLimit, 0)
-		if err != nil {
+	}
+}
+
+func (a *Agent) injectInputs(inputs []Input) error {
+	for _, input := range inputs {
+		source := strings.TrimSpace(input.Source)
+		if source == "" {
+			source = "unknown"
+		}
+		a.tracef("in source=%s msg=%q", source, compactTraceText(input.Content))
+		msg := newUserMessage(formatInput(input))
+		if err := a.messages.Create(msg); err != nil {
 			return err
 		}
 	}
-
-	return a.updateSessionUsage(session, total)
+	return nil
 }
 
-func (a *Agent) getOrCreateSession(id string) (*Session, error) {
-
-	sid := strings.TrimSpace(id)
-	if sid != "" {
-		session, err := a.sessions.Get(sid)
-		if err == nil {
-			return session, nil
-		}
-		return a.createSession(sid)
+func formatInput(input Input) string {
+	source := strings.TrimSpace(input.Source)
+	content := strings.TrimSpace(input.Content)
+	if source == "" {
+		return content
 	}
-
-	return a.createSession(uuid.NewString())
-}
-
-func (a *Agent) createSession(id string) (*Session, error) {
-
-	now := time.Now().UTC()
-	s := &Session{ID: id, CreatedAt: now, UpdatedAt: now}
-	if err := a.sessions.Create(s); err != nil {
-		return nil, err
+	if content == "" {
+		return "[" + source + "]"
 	}
-
-	return s, nil
+	return "[" + source + "] " + content
 }
 
-func newUserMessage(sessionID, content string) *Message {
+func newUserMessage(content string) *Message {
 
 	now := time.Now().UTC()
 	msg := &Message{
 		ID:        uuid.NewString(),
-		SessionID: sessionID,
 		Role:      RoleUser,
 		Parts:     []MessagePart{TextPart{Text: content}},
 		CreatedAt: now,
@@ -97,30 +96,40 @@ func newUserMessage(sessionID, content string) *Message {
 	return msg
 }
 
-func (a *Agent) streamAndHandle(ctx context.Context, session *Session, messages []*Message, toolList []tooling.Tool) (bool, error) {
-	a.setLastUsage(nil)
-
-	assistant := &Message{ID: uuid.NewString(), SessionID: session.ID, Role: RoleAssistant, CreatedAt: time.Now().UTC()}
-	history := a.buildHistory(session, messages)
-	text, reasoning, calls, usage, err := a.collectStream(ctx, history, toProviderDefs(toolList))
+func (a *Agent) streamAndHandle(ctx context.Context, toolList []tooling.Tool) (bool, error) {
+	msgs, err := a.messages.List(threadMessageLimit, 0)
 	if err != nil {
 		return false, err
 	}
-	a.setLastUsage(usage)
+	assistant := &Message{ID: uuid.NewString(), Role: RoleAssistant, CreatedAt: time.Now().UTC()}
+	history := a.buildHistory(msgs)
+	text, reasoning, calls, _, err := a.collectStream(ctx, history, toProviderDefs(toolList))
+	if err != nil {
+		return false, err
+	}
+	if reasoning != "" {
+		a.tracef("think=%q", compactTraceText(reasoning))
+	}
+	if text != "" {
+		a.tracef("mono=%q", compactTraceText(text))
+	}
+	for _, call := range calls {
+		a.tracef("tool_call id=%s name=%s args=%q", call.ID, call.Name, compactTraceText(string(call.Parameters)))
+	}
 	assistant.Parts = buildAssistantParts(text, reasoning, calls)
 	if err := a.messages.Create(assistant); err != nil {
 		return false, err
 	}
 	if len(calls) == 0 {
-		a.eventBroker.Publish(AgentEvent{Type: EventResponse, SessionID: session.ID, Message: assistant})
 		return false, nil
 	}
 
-	toolMsg, err := runTools(ctx, session.ID, toolList, calls)
+	toolMsg, err := runTools(ctx, toolList, calls)
 	if toolMsg != nil {
 		if err := a.messages.Create(toolMsg); err != nil {
 			return false, err
 		}
+		traceToolResults(a, calls, toolMsg)
 	}
 	if err != nil {
 		return false, err
@@ -216,24 +225,23 @@ func buildAssistantParts(text, reasoning string, calls []ToolCallPart) []Message
 	return parts
 }
 
-func runTools(ctx context.Context, sessionID string, toolList []tooling.Tool, calls []ToolCallPart) (*Message, error) {
+func runTools(ctx context.Context, toolList []tooling.Tool, calls []ToolCallPart) (*Message, error) {
 
-	ctx = tooling.WithSessionID(ctx, sessionID)
 	parts := make([]MessagePart, 0, len(calls))
 	for i, call := range calls {
 		if err := ctx.Err(); err != nil {
 			parts = appendCancelled(parts, calls[i:])
-			return newToolMessage(sessionID, parts), err
+			return newToolMessage(parts), err
 		}
 		result := runTool(ctx, toolList, call)
 		if err := ctx.Err(); err != nil {
 			parts = append(parts, cancelledPart(call))
 			parts = appendCancelled(parts, calls[i+1:])
-			return newToolMessage(sessionID, parts), err
+			return newToolMessage(parts), err
 		}
 		parts = append(parts, result)
 	}
-	return newToolMessage(sessionID, parts), nil
+	return newToolMessage(parts), nil
 }
 
 func appendCancelled(parts []MessagePart, calls []ToolCallPart) []MessagePart {
@@ -247,8 +255,8 @@ func cancelledPart(call ToolCallPart) ToolResultPart {
 	return ToolResultPart{ToolCallID: call.ID, Content: "Cancelled", IsError: true}
 }
 
-func newToolMessage(sessionID string, parts []MessagePart) *Message {
-	return &Message{ID: uuid.NewString(), SessionID: sessionID, Role: RoleTool, Parts: parts, CreatedAt: time.Now().UTC()}
+func newToolMessage(parts []MessagePart) *Message {
+	return &Message{ID: uuid.NewString(), Role: RoleTool, Parts: parts, CreatedAt: time.Now().UTC()}
 }
 
 func runTool(ctx context.Context, toolList []tooling.Tool, call ToolCallPart) ToolResultPart {
@@ -285,24 +293,49 @@ func toProviderDefs(toolList []tooling.Tool) []provider.ToolDef {
 	return defs
 }
 
-func (a *Agent) buildHistory(session *Session, messages []*Message) []model.Message {
+func traceToolResults(a *Agent, calls []ToolCallPart, msg *Message) {
 
-	out := []model.Message{a.systemMessage(session.ID)}
-	if session.SummaryMessageID == "" {
-		return append(out, flattenMessages(messages)...)
+	for _, part := range msg.Parts {
+		result, ok := part.(ToolResultPart)
+		if !ok {
+			continue
+		}
+		a.tracef(
+			"tool_result id=%s name=%s err=%t out=%q",
+			result.ToolCallID,
+			findToolCallName(calls, result.ToolCallID),
+			result.IsError,
+			compactTraceText(result.Content),
+		)
 	}
-	summary := findMessage(messages, session.SummaryMessageID)
-	summary.Role = model.RoleUser
-	out = append(out, summary)
-	last := findLastUserMessage(messages)
-	if last.ID != summary.ID {
-		out = append(out, last)
-	}
-
-	return out
 }
 
-func (a *Agent) systemMessage(sessionID string) model.Message {
+func findToolCallName(calls []ToolCallPart, id string) string {
+
+	for _, call := range calls {
+		if call.ID == id {
+			return call.Name
+		}
+	}
+	return "unknown"
+}
+
+func compactTraceText(raw string) string {
+
+	clean := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if len(clean) <= traceTextLimit {
+		return clean
+	}
+	return clean[:traceTextLimit-3] + "..."
+}
+
+func (a *Agent) buildHistory(messages []*Message) []model.Message {
+
+	out := []model.Message{a.systemMessage()}
+	return append(out, flattenMessages(messages)...)
+}
+
+func (a *Agent) systemMessage() model.Message {
 
 	mode := a.promptMode
 	if mode == "" {
@@ -319,7 +352,6 @@ func (a *Agent) systemMessage(sessionID string) model.Message {
 	})
 	msg := model.Message{
 		ID:        "system-" + uuid.NewString(),
-		SessionID: sessionID,
 		Role:      model.RoleUser,
 		Parts:     []model.MessagePart{model.TextPart{Text: txt}},
 		CreatedAt: time.Now().UTC(),
@@ -337,16 +369,6 @@ func flattenMessages(messages []*Message) []model.Message {
 	return out
 }
 
-func findMessage(messages []*Message, id string) model.Message {
-
-	for _, msg := range messages {
-		if msg.ID == id {
-			return model.Message(*msg)
-		}
-	}
-	panic("summary message not found")
-}
-
 func findLastUserMessage(messages []*Message) model.Message {
 
 	for i := len(messages) - 1; i >= 0; i-- {
@@ -355,50 +377,4 @@ func findLastUserMessage(messages []*Message) model.Message {
 		}
 	}
 	panic("last user message not found")
-}
-
-func mergeUsage(dst *provider.UsageInfo, src *provider.UsageInfo) {
-
-	if src == nil {
-		return
-	}
-	dst.PromptTokens += src.PromptTokens
-	dst.CompletionTokens += src.CompletionTokens
-	dst.CacheReadTokens += src.CacheReadTokens
-	dst.CacheWriteTokens += src.CacheWriteTokens
-}
-
-func (a *Agent) updateSessionUsage(session *Session, usage *provider.UsageInfo) error {
-
-	session.PromptTokens += usage.PromptTokens
-	session.CompletionTokens += usage.CompletionTokens
-	session.Cost += float64(usage.PromptTokens)*a.provider.Model().CostPerInputToken +
-		float64(usage.CompletionTokens)*a.provider.Model().CostPerOutputToken
-	count, err := a.messages.CountBySession(session.ID)
-	if err != nil {
-		return err
-	}
-	session.MessageCount = count
-	session.UpdatedAt = time.Now().UTC()
-
-	return a.sessions.Update(session)
-}
-
-func (a *Agent) setLastUsage(usage *provider.UsageInfo) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if usage == nil {
-		a.lastUsage = nil
-		return
-	}
-	v := *usage
-	a.lastUsage = &v
-}
-
-func (a *Agent) takeLastUsage() *provider.UsageInfo {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	usage := a.lastUsage
-	a.lastUsage = nil
-	return usage
 }

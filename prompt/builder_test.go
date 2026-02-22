@@ -33,6 +33,7 @@ func TestBuildSystemPromptFullAllSectionsPopulated(t *testing.T) {
 
 	headers := []string{
 		"## Identity\n",
+		"## Messaging\n",
 		"## Tool Call Style\n",
 		"## Safety\n",
 		"## Skills\n",
@@ -66,6 +67,9 @@ func TestBuildSystemPromptFullSkipsEmptySections(t *testing.T) {
 	}
 	if !strings.Contains(got, "## Tool Call Style\n") {
 		t.Fatalf("expected tool call style section, got:\n%s", got)
+	}
+	if !strings.Contains(got, "## Messaging\n") {
+		t.Fatalf("expected messaging section, got:\n%s", got)
 	}
 	if !strings.Contains(got, "## Safety\n") {
 		t.Fatalf("expected safety section, got:\n%s", got)
@@ -114,6 +118,7 @@ func TestBuildSystemPromptMinimalIncludesCorrectSections(t *testing.T) {
 
 	present := []string{
 		"## Identity\n",
+		"## Messaging\n",
 		"## Workspace\n",
 		"## Workspace Files\n",
 		"## Heartbeat\n",
@@ -200,6 +205,7 @@ func TestBuildSystemPromptSectionOrdering(t *testing.T) {
 
 	orderedHeaders := []string{
 		"## Identity\n",
+		"## Messaging\n",
 		"## Tool Call Style\n",
 		"## Safety\n",
 		"## Skills\n",

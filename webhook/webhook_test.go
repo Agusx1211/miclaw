@@ -41,10 +41,10 @@ func TestWebhookEnqueuesMessage(t *testing.T) {
 	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
-	if gotSource != "webhook" {
+	if gotSource != "webhook:alpha" {
 		t.Fatalf("got source=%q", gotSource)
 	}
-	if gotContent != "[webhook:alpha] hello" {
+	if gotContent != "hello" {
 		t.Fatalf("got content=%q", gotContent)
 	}
 	if gotMetadata["id"] != "alpha" {
@@ -174,7 +174,7 @@ func TestWebhookTextFormat(t *testing.T) {
 	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
-	if got != "[webhook:text] plain text" {
+	if got != "plain text" {
 		t.Fatalf("got=%q", got)
 	}
 }
@@ -202,7 +202,7 @@ func TestWebhookJSONFormat(t *testing.T) {
 	if res.StatusCode != http.StatusAccepted {
 		t.Fatalf("status=%d", res.StatusCode)
 	}
-	if got != `[webhook:json] {"x":1}` {
+	if got != `{"x":1}` {
 		t.Fatalf("got=%q", got)
 	}
 }

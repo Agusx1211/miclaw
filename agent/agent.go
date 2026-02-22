@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"sync/atomic"
 
@@ -12,43 +13,40 @@ import (
 )
 
 type Agent struct {
-	sessions    store.SessionStore
 	messages    store.MessageStore
 	tools       []tooling.Tool
 	provider    provider.LLMProvider
 	active      atomic.Bool
 	cancel      context.CancelFunc
 	eventBroker *Broker[AgentEvent]
-	queue       *InputQueue
+	pending     *InputQueue
 	workspace   *prompt.Workspace
 	skills      []prompt.SkillSummary
 	memory      string
 	heartbeat   string
 	runtimeInfo string
 	promptMode  string
-	lastUsage   *provider.UsageInfo
+	trace       func(format string, args ...any)
 
-	mu    sync.Mutex
-	runID atomic.Uint64
+	mu sync.Mutex
 }
 
 func NewAgent(
-	sessions store.SessionStore,
 	messages store.MessageStore,
 	toolList []tooling.Tool,
 	prov provider.LLMProvider,
 ) *Agent {
 
 	a := &Agent{
-		sessions:    sessions,
 		messages:    messages,
 		tools:       append([]tooling.Tool(nil), toolList...),
 		provider:    prov,
 		eventBroker: NewBroker[AgentEvent](),
-		queue:       &InputQueue{},
+		pending:     &InputQueue{},
 		workspace:   &prompt.Workspace{},
 		skills:      []prompt.SkillSummary{},
 		promptMode:  "full",
+		trace:       func(string, ...any) {},
 	}
 
 	return a
@@ -56,7 +54,12 @@ func NewAgent(
 
 func (a *Agent) RunOnce(ctx context.Context, input Input) error {
 
-	return a.processGeneration(ctx, input)
+	if !a.active.CompareAndSwap(false, true) {
+		return errors.New("agent is active")
+	}
+	defer a.active.Store(false)
+	a.pending.Push(input)
+	return a.run(ctx)
 }
 
 func (a *Agent) SetPromptMode(mode string) {
@@ -74,20 +77,45 @@ func (a *Agent) SetSkills(skills []prompt.SkillSummary) {
 	a.skills = skills
 }
 
-func (a *Agent) Enqueue(input Input) {
+func (a *Agent) SetTrace(trace func(format string, args ...any)) {
 
-	a.queue.Push(input)
-	a.mu.Lock()
-	if a.active.Load() {
-		a.mu.Unlock()
+	a.trace = trace
+}
+
+func (a *Agent) Inject(input Input) {
+
+	a.pending.Push(input)
+	a.startWorker()
+}
+
+func (a *Agent) startWorker() {
+
+	if !a.active.CompareAndSwap(false, true) {
 		return
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	runID := a.runID.Add(1)
+	a.mu.Lock()
 	a.cancel = cancel
-	a.active.Store(true)
 	a.mu.Unlock()
-	go a.processQueue(ctx, runID)
+	go a.runAsync(ctx)
+}
+
+func (a *Agent) runAsync(ctx context.Context) {
+	defer func() {
+		a.mu.Lock()
+		a.cancel = nil
+		a.mu.Unlock()
+		a.active.Store(false)
+		if a.pending.Len() > 0 {
+			a.startWorker()
+		}
+	}()
+	a.tracef("wake")
+	if err := a.run(ctx); err != nil {
+		a.tracef("error=%v", err)
+		a.eventBroker.Publish(AgentEvent{Type: EventError, Error: err})
+	}
+	a.tracef("sleep")
 }
 
 func (a *Agent) Cancel() {
@@ -95,7 +123,6 @@ func (a *Agent) Cancel() {
 	a.mu.Lock()
 	cancel := a.cancel
 	a.cancel = nil
-	a.active.Store(false)
 	a.mu.Unlock()
 	if cancel != nil {
 		cancel()
@@ -113,25 +140,7 @@ func (a *Agent) Events() *Broker[AgentEvent] {
 	return a.eventBroker
 }
 
-func (a *Agent) processQueue(ctx context.Context, runID uint64) {
-	defer func() {
-		a.mu.Lock()
-		if a.runID.Load() == runID {
-			a.cancel = nil
-			a.active.Store(false)
-		}
-		a.mu.Unlock()
-	}()
-	for {
-		if ctx.Err() != nil {
-			return
-		}
-		input, ok := a.queue.Pop()
-		if !ok {
-			return
-		}
-		if err := a.processGeneration(ctx, input); err != nil {
-			a.eventBroker.Publish(AgentEvent{Type: EventError, SessionID: input.SessionID, Error: err})
-		}
-	}
+func (a *Agent) tracef(format string, args ...any) {
+
+	a.trace(format, args...)
 }

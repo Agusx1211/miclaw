@@ -85,7 +85,7 @@ func (s *Server) webhookHandler(hook config.WebhookDef) http.HandlerFunc {
 		if hook.Format == "json" {
 			content = string(body)
 		}
-		s.enqueue("webhook", "[webhook:"+hook.ID+"] "+content, map[string]string{"id": hook.ID})
+		s.enqueue("webhook:"+hook.ID, content, map[string]string{"id": hook.ID})
 		w.WriteHeader(http.StatusAccepted)
 	}
 }

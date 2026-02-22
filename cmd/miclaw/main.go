@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"syscall"
+	"time"
 
 	"github.com/agusx1211/miclaw/agent"
 	"github.com/agusx1211/miclaw/config"
@@ -27,6 +28,9 @@ import (
 	"github.com/agusx1211/miclaw/webhook"
 )
 
+const runtimeLogTextLimit = 180
+const typingKeepaliveInterval = 8 * time.Second
+
 type runtimeDeps struct {
 	cfg         *config.Config
 	sqlStore    *store.SQLiteStore
@@ -34,6 +38,8 @@ type runtimeDeps struct {
 	embedClient *memory.EmbedClient
 	scheduler   *tools.Scheduler
 	agent       *agent.Agent
+	signal      *signalpipe.Client
+	typing      *typingState
 }
 
 type cliFlags struct {
@@ -96,6 +102,7 @@ func run(args []string, stdout, stderr io.Writer) error {
 
 	fmt.Fprintf(stderr, "%s\n", versionString())
 	fmt.Fprintf(stderr, "workspace=%s state=%s backend=%s model=%s\n", deps.cfg.Workspace, deps.cfg.StatePath, deps.cfg.Provider.Backend, deps.cfg.Provider.Model)
+	log.Printf("[trace] compact runtime tracing enabled")
 
 	sigCh := make(chan os.Signal, 2)
 	osSignal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -170,26 +177,64 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 	if err != nil {
 		return nil, err
 	}
+	var signalClient *signalpipe.Client
+	if cfg.Signal.Enabled {
+		baseURL := fmt.Sprintf("http://%s:%d", cfg.Signal.HTTPHost, cfg.Signal.HTTPPort)
+		signalClient = signalpipe.NewClient(baseURL, cfg.Signal.Account)
+	}
+	typing := newTypingState()
+	sendMessage := func(ctx context.Context, to, content string) error {
+		if signalClient == nil {
+			return fmt.Errorf("signal is disabled")
+		}
+		return sendSignalMessage(ctx, signalClient, cfg.Signal, to, content)
+	}
+	var startTyping func(context.Context, string, time.Duration) error
+	var stopTyping func(context.Context, string) error
+	if signalClient != nil {
+		startTyping = func(_ context.Context, to string, duration time.Duration) error {
+			return typing.Start(to, duration, func(callCtx context.Context, target string) error {
+				return sendSignalTyping(callCtx, signalClient, target)
+			})
+		}
+		stopTyping = func(_ context.Context, to string) error {
+			return typing.Stop(to, func(callCtx context.Context, target string) error {
+				return sendSignalTypingStop(callCtx, signalClient, target)
+			})
+		}
+	}
 	var ag *agent.Agent
 	toolList := tools.MainAgentTools(tools.MainToolDeps{
-		Sessions:  sqlStore.Sessions,
-		Messages:  sqlStore.Messages,
-		Provider:  prov,
-		Sandbox:   cfg.Sandbox,
-		Memory:    memStore,
-		Embed:     embedClient,
-		Scheduler: scheduler,
-		Model:     cfg.Provider.Model,
-		IsActive: func() bool {
-			if ag == nil {
-				return false
-			}
-			return ag.IsActive()
-		},
+		Sandbox:     cfg.Sandbox,
+		Memory:      memStore,
+		Embed:       embedClient,
+		Scheduler:   scheduler,
+		SendMessage: sendMessage,
+		StartTyping: startTyping,
+		StopTyping:  stopTyping,
 	})
-	ag = agent.NewAgent(sqlStore.Sessions, sqlStore.Messages, toolList, prov)
+	ag = agent.NewAgent(sqlStore.Messages, toolList, prov)
 	ag.SetWorkspace(workspace)
 	ag.SetSkills(skills)
+	ag.SetTrace(func(format string, args ...any) {
+		if signalClient != nil {
+			switch format {
+			case "wake":
+				if err := typing.StartAuto(func(callCtx context.Context, target string) error {
+					return sendSignalTyping(callCtx, signalClient, target)
+				}); err != nil {
+					log.Printf("[signal] typing_auto_error err=%v", err)
+				}
+			case "sleep":
+				if err := typing.StopAll(func(callCtx context.Context, target string) error {
+					return sendSignalTypingStop(callCtx, signalClient, target)
+				}); err != nil {
+					log.Printf("[signal] typing_auto_error err=%v", err)
+				}
+			}
+		}
+		log.Printf("[agent] "+format, args...)
+	})
 
 	return &runtimeDeps{
 		cfg:         cfg,
@@ -198,6 +243,8 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		embedClient: embedClient,
 		scheduler:   scheduler,
 		agent:       ag,
+		signal:      signalClient,
+		typing:      typing,
 	}, nil
 }
 
@@ -259,8 +306,13 @@ func startScheduler(ctx context.Context, deps *runtimeDeps) error {
 	if _, err := deps.scheduler.ListJobs(); err != nil {
 		return err
 	}
-	deps.scheduler.Start(ctx, func(sessionID, content string) {
-		deps.agent.Enqueue(agent.Input{SessionID: sessionID, Content: content, Source: agent.SourceCron})
+	deps.scheduler.Start(ctx, func(source, content string) {
+		if isHeartbeatPrompt(content) && deps.agent.IsActive() {
+			log.Printf("[cron] skip source=%s active=true msg=%q", source, compactRuntimeText(content))
+			return
+		}
+		log.Printf("[cron] in source=%s msg=%q", source, compactRuntimeText(content))
+		deps.agent.Inject(agent.Input{Source: source, Content: content})
 	})
 	return nil
 }
@@ -270,16 +322,23 @@ func startSignalPipeline(ctx context.Context, deps *runtimeDeps, wg *sync.WaitGr
 	if !deps.cfg.Signal.Enabled {
 		return
 	}
-	baseURL := fmt.Sprintf("http://%s:%d", deps.cfg.Signal.HTTPHost, deps.cfg.Signal.HTTPPort)
-	client := signalpipe.NewClient(baseURL, deps.cfg.Signal.Account)
 	pipeline := signalpipe.NewPipeline(
-		client,
+		deps.signal,
 		deps.cfg.Signal,
-		func(sessionID, content string, metadata map[string]string) {
-			deps.agent.Enqueue(agent.Input{SessionID: sessionID, Content: content, Source: agent.SourceSignal, Metadata: metadata})
-		},
-		func() (<-chan signalpipe.Event, func()) {
-			return subscribeSignalEvents(deps.agent)
+		func(source, content string, metadata map[string]string) {
+			log.Printf("[signal] in source=%s msg=%q", source, compactRuntimeText(content))
+			if handleSignalCommand(ctx, deps, source, content) {
+				return
+			}
+			deps.typing.SetAutoTarget(source)
+			if deps.agent.IsActive() {
+				if err := deps.typing.StartAuto(func(callCtx context.Context, target string) error {
+					return sendSignalTyping(callCtx, deps.signal, target)
+				}); err != nil {
+					log.Printf("[signal] typing_auto_error err=%v", err)
+				}
+			}
+			deps.agent.Inject(agent.Input{Source: source, Content: content, Metadata: metadata})
 		},
 	)
 	wg.Add(1)
@@ -291,33 +350,61 @@ func startSignalPipeline(ctx context.Context, deps *runtimeDeps, wg *sync.WaitGr
 	}()
 }
 
-func subscribeSignalEvents(ag *agent.Agent) (<-chan signalpipe.Event, func()) {
+func parseSignalCommand(content string) string {
+	switch strings.ToLower(strings.TrimSpace(content)) {
+	case "/new":
+		return "/new"
+	case "/compact":
+		return "/compact"
+	default:
+		return ""
+	}
+}
 
-	events, unsubscribe := ag.Events().Subscribe()
-	out := make(chan signalpipe.Event, 64)
-	go func() {
-		defer close(out)
-		for ev := range events {
-			if !strings.HasPrefix(ev.SessionID, "signal:") {
-				continue
-			}
-			if ev.Type == agent.EventResponse {
-				if ev.Message == nil {
-					continue
-				}
-				text := messageText(ev.Message)
-				if text == "" {
-					continue
-				}
-				out <- signalpipe.Event{SessionID: ev.SessionID, Text: text}
-				continue
-			}
-			if ev.Type == agent.EventError && ev.Error != nil {
-				out <- signalpipe.Event{SessionID: ev.SessionID, Text: "Error: " + ev.Error.Error()}
-			}
+func handleSignalCommand(ctx context.Context, deps *runtimeDeps, source, content string) bool {
+	switch parseSignalCommand(content) {
+	case "":
+		return false
+	case "/new":
+		deps.agent.Cancel()
+		deadline := time.Now().Add(3 * time.Second)
+		for deps.agent.IsActive() && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
 		}
-	}()
-	return out, unsubscribe
+		if deps.agent.IsActive() {
+			_ = sendSignalMessage(ctx, deps.signal, deps.cfg.Signal, source, "agent is busy; try /new again in a few seconds")
+			return true
+		}
+		_ = deps.typing.StopAll(func(callCtx context.Context, target string) error {
+			return sendSignalTypingStop(callCtx, deps.signal, target)
+		})
+		if err := deps.sqlStore.MessageStore().DeleteAll(); err != nil {
+			log.Printf("[signal] command=/new err=%v", err)
+			_ = sendSignalMessage(ctx, deps.signal, deps.cfg.Signal, source, "failed to reset thread")
+			return true
+		}
+		_ = sendSignalMessage(ctx, deps.signal, deps.cfg.Signal, source, "thread reset")
+		return true
+	case "/compact":
+		if deps.agent.IsActive() {
+			_ = sendSignalMessage(ctx, deps.signal, deps.cfg.Signal, source, "agent is busy; try /compact again in a few seconds")
+			return true
+		}
+		_ = sendSignalMessage(ctx, deps.signal, deps.cfg.Signal, source, "compacting context")
+		go func() {
+			compactCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+			if err := deps.agent.Compact(compactCtx); err != nil {
+				log.Printf("[signal] command=/compact err=%v", err)
+				_ = sendSignalMessage(context.Background(), deps.signal, deps.cfg.Signal, source, "compaction failed")
+				return
+			}
+			_ = sendSignalMessage(context.Background(), deps.signal, deps.cfg.Signal, source, "compaction complete")
+		}()
+		return true
+	default:
+		return false
+	}
 }
 
 func startWebhookServer(ctx context.Context, deps *runtimeDeps, wg *sync.WaitGroup, errCh chan<- error) {
@@ -326,11 +413,8 @@ func startWebhookServer(ctx context.Context, deps *runtimeDeps, wg *sync.WaitGro
 		return
 	}
 	srv := webhook.New(deps.cfg.Webhook, func(source, content string, metadata map[string]string) {
-		sessionID := source
-		if id := metadata["id"]; id != "" {
-			sessionID = source + ":" + id
-		}
-		deps.agent.Enqueue(agent.Input{SessionID: sessionID, Content: content, Source: agent.SourceWebhook, Metadata: metadata})
+		log.Printf("[webhook] in source=%s msg=%q", source, compactRuntimeText(content))
+		deps.agent.Inject(agent.Input{Source: source, Content: content, Metadata: metadata})
 	})
 	wg.Add(1)
 	go func() {
@@ -341,16 +425,239 @@ func startWebhookServer(ctx context.Context, deps *runtimeDeps, wg *sync.WaitGro
 	}()
 }
 
-func messageText(msg *agent.Message) string {
-
-	parts := make([]string, 0, len(msg.Parts))
-	for _, part := range msg.Parts {
-		p, ok := part.(agent.TextPart)
-		if ok && p.Text != "" {
-			parts = append(parts, p.Text)
+func sendSignalMessage(ctx context.Context, client *signalpipe.Client, cfg config.SignalConfig, to, content string) error {
+	log.Printf("[signal] out to=%s msg=%q", to, compactRuntimeText(content))
+	kind, target, err := parseSignalTarget(to)
+	if err != nil {
+		return err
+	}
+	text, styles := signalpipe.MarkdownToSignal(content)
+	limit := cfg.TextChunkLimit
+	if limit <= 0 {
+		limit = len(text)
+	}
+	if kind == "group" {
+		for _, chunk := range signalpipe.ChunkText(text, limit) {
+			if err := client.SendGroup(ctx, target, chunk, styles); err != nil {
+				log.Printf("[signal] out_error to=%s err=%v", to, err)
+				return err
+			}
+		}
+		log.Printf("[signal] out_ok to=%s", to)
+		return nil
+	}
+	for _, chunk := range signalpipe.ChunkText(text, limit) {
+		if err := client.Send(ctx, target, chunk, styles); err != nil {
+			log.Printf("[signal] out_error to=%s err=%v", to, err)
+			return err
 		}
 	}
-	return strings.Join(parts, "")
+	log.Printf("[signal] out_ok to=%s", to)
+	return nil
+}
+
+func sendSignalTyping(ctx context.Context, client *signalpipe.Client, to string) error {
+	log.Printf("[signal] typing to=%s", to)
+	kind, target, err := parseSignalTarget(to)
+	if err != nil {
+		return err
+	}
+	if kind != "dm" {
+		return fmt.Errorf("typing target must be signal:dm:<recipient>")
+	}
+	if err := client.SendTyping(ctx, target); err != nil {
+		log.Printf("[signal] typing_error to=%s err=%v", to, err)
+		return err
+	}
+	log.Printf("[signal] typing_ok to=%s", to)
+	return nil
+}
+
+func sendSignalTypingStop(ctx context.Context, client *signalpipe.Client, to string) error {
+	log.Printf("[signal] typing_stop to=%s", to)
+	kind, target, err := parseSignalTarget(to)
+	if err != nil {
+		return err
+	}
+	if kind != "dm" {
+		return fmt.Errorf("typing target must be signal:dm:<recipient>")
+	}
+	if err := client.SendTypingStop(ctx, target); err != nil {
+		log.Printf("[signal] typing_stop_error to=%s err=%v", to, err)
+		return err
+	}
+	log.Printf("[signal] typing_stop_ok to=%s", to)
+	return nil
+}
+
+func parseSignalTarget(to string) (string, string, error) {
+	parts := strings.SplitN(to, ":", 3)
+	if len(parts) != 3 || parts[0] != "signal" || strings.TrimSpace(parts[2]) == "" {
+		return "", "", fmt.Errorf("invalid signal target %q", to)
+	}
+	if parts[1] != "dm" && parts[1] != "group" {
+		return "", "", fmt.Errorf("invalid signal target %q", to)
+	}
+	return parts[1], strings.TrimSpace(parts[2]), nil
+}
+
+type typingState struct {
+	mu          sync.Mutex
+	active      map[string]chan struct{}
+	autoTarget  string
+	autoPending bool
+}
+
+func newTypingState() *typingState {
+	return &typingState{active: map[string]chan struct{}{}}
+}
+
+func (s *typingState) Start(to string, duration time.Duration, send func(context.Context, string) error) error {
+	if err := send(context.Background(), to); err != nil {
+		return err
+	}
+	stop := make(chan struct{})
+	s.mu.Lock()
+	if prev, ok := s.active[to]; ok {
+		close(prev)
+	}
+	s.active[to] = stop
+	s.mu.Unlock()
+	go func() {
+		ticker := time.NewTicker(typingKeepaliveInterval)
+		defer ticker.Stop()
+		var timeout *time.Timer
+		var timeoutCh <-chan time.Time
+		if duration > 0 {
+			timeout = time.NewTimer(duration)
+			timeoutCh = timeout.C
+		}
+		if timeout != nil {
+			defer timeout.Stop()
+		}
+		defer func() {
+			s.mu.Lock()
+			if s.active[to] == stop {
+				delete(s.active, to)
+			}
+			s.mu.Unlock()
+		}()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-timeoutCh:
+				return
+			case <-ticker.C:
+				s.mu.Lock()
+				live := s.active[to] == stop
+				s.mu.Unlock()
+				if !live {
+					return
+				}
+				_ = send(context.Background(), to)
+			}
+		}
+	}()
+	return nil
+}
+
+func (s *typingState) Clear(to string) {
+	stop, ok := s.take(to)
+	if ok {
+		close(stop)
+	}
+}
+
+func (s *typingState) ClearAll() {
+	stops := s.takeAll()
+	for _, stop := range stops {
+		close(stop)
+	}
+}
+
+func (s *typingState) Stop(to string, stopTyping func(context.Context, string) error) error {
+	s.Clear(to)
+	return stopTyping(context.Background(), to)
+}
+
+func (s *typingState) StopAll(stopTyping func(context.Context, string) error) error {
+	targets := s.activeTargets()
+	s.ClearAll()
+	for _, to := range targets {
+		if err := stopTyping(context.Background(), to); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *typingState) take(to string) (chan struct{}, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stop, ok := s.active[to]
+	if ok {
+		delete(s.active, to)
+	}
+	return stop, ok
+}
+
+func (s *typingState) takeAll() []chan struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	stops := make([]chan struct{}, 0, len(s.active))
+	for to, stop := range s.active {
+		delete(s.active, to)
+		stops = append(stops, stop)
+	}
+	return stops
+}
+
+func (s *typingState) activeTargets() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	targets := make([]string, 0, len(s.active))
+	for to := range s.active {
+		targets = append(targets, to)
+	}
+	return targets
+}
+
+func (s *typingState) SetAutoTarget(source string) {
+	kind, id, err := parseSignalTarget(source)
+	if err != nil || kind != "dm" {
+		return
+	}
+	s.mu.Lock()
+	s.autoTarget = "signal:dm:" + id
+	s.autoPending = true
+	s.mu.Unlock()
+}
+
+func (s *typingState) StartAuto(send func(context.Context, string) error) error {
+	s.mu.Lock()
+	to := s.autoTarget
+	pending := s.autoPending
+	s.autoPending = false
+	s.mu.Unlock()
+	if to == "" || !pending {
+		return nil
+	}
+	return s.Start(to, 0, send)
+}
+
+func isHeartbeatPrompt(content string) bool {
+	v := strings.ToLower(content)
+	return strings.Contains(v, "heartbeat") || strings.Contains(v, "health check")
+}
+
+func compactRuntimeText(raw string) string {
+
+	clean := strings.Join(strings.Fields(strings.TrimSpace(raw)), " ")
+	if len(clean) <= runtimeLogTextLimit {
+		return clean
+	}
+	return clean[:runtimeLogTextLimit-3] + "..."
 }
 
 func versionString() string {

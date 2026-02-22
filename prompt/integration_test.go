@@ -67,6 +67,7 @@ func TestFullPrompt(t *testing.T) {
 
 	present := []string{
 		"## Identity\n",
+		"## Messaging\n",
 		"## Tool Call Style\n",
 		"## Safety\n",
 		"## Skills\n",
@@ -88,6 +89,7 @@ func TestFullPrompt(t *testing.T) {
 
 	order := []string{
 		"## Identity\n",
+		"## Messaging\n",
 		"## Tool Call Style\n",
 		"## Safety\n",
 		"## Skills\n",
@@ -158,6 +160,7 @@ func TestMinimalPrompt(t *testing.T) {
 
 	present := []string{
 		"## Identity\n",
+		"## Messaging\n",
 		"## Workspace\n",
 		"## Workspace Files\n",
 		"## Heartbeat\n",

@@ -11,21 +11,21 @@ import (
 )
 
 type messageParams struct {
-	Target  string
+	To      string
 	Content string
 }
 
-func messageTool(sendMessage func(ctx context.Context, recipient, content string) error) Tool {
+func messageTool(sendMessage func(ctx context.Context, to, content string) error) Tool {
 	return tool{
 		name: "message",
 		desc: "Send a message to a recipient",
 		params: JSONSchema{
 			Type:     "object",
-			Required: []string{"target", "content"},
+			Required: []string{"to", "content"},
 			Properties: map[string]JSONSchema{
-				"target": {
+				"to": {
 					Type: "string",
-					Desc: "Message target (for example: signal:+15551234567)",
+					Desc: "Message target (for example: signal:dm:user-uuid or signal:group:group-id)",
 				},
 				"content": {
 					Type: "string",
@@ -38,45 +38,45 @@ func messageTool(sendMessage func(ctx context.Context, recipient, content string
 			if err != nil {
 				return ToolResult{IsError: true, Content: err.Error()}, nil
 			}
-			channel, recipient, err := parseMessageTarget(params.Target)
+			channel, _, err := parseMessageTarget(params.To)
 			if err != nil {
 				return ToolResult{IsError: true, Content: err.Error()}, nil
 			}
 			if channel != "signal" {
 				return ToolResult{IsError: true, Content: fmt.Sprintf("unsupported channel: %s", channel)}, nil
 			}
-			if err := sendMessage(ctx, recipient, params.Content); err != nil {
+			if err := sendMessage(ctx, params.To, params.Content); err != nil {
 				return ToolResult{IsError: true, Content: err.Error()}, nil
 			}
-			return ToolResult{Content: fmt.Sprintf("message sent to %s", params.Target)}, nil
+			return ToolResult{Content: fmt.Sprintf("message sent to %s", params.To)}, nil
 		},
 	}
 }
 
 func parseMessageParams(raw json.RawMessage) (messageParams, error) {
 	var input struct {
-		Target  *string `json:"target"`
+		To      *string `json:"to"`
 		Content *string `json:"content"`
 	}
 	if err := unmarshalObject(raw, &input); err != nil {
 		return messageParams{}, fmt.Errorf("parse message parameters: %v", err)
 	}
-	if input.Target == nil || strings.TrimSpace(*input.Target) == "" {
-		return messageParams{}, errors.New("target is required")
+	if input.To == nil || strings.TrimSpace(*input.To) == "" {
+		return messageParams{}, errors.New("to is required")
 	}
 	if input.Content == nil || strings.TrimSpace(*input.Content) == "" {
 		return messageParams{}, errors.New("content is required")
 	}
 	return messageParams{
-		Target:  strings.TrimSpace(*input.Target),
+		To:      strings.TrimSpace(*input.To),
 		Content: strings.TrimSpace(*input.Content),
 	}, nil
 }
 
 func parseMessageTarget(raw string) (string, string, error) {
 	parts := strings.SplitN(raw, ":", 2)
-	if len(parts) != 2 {
-		return "", "", errors.New("target must include channel and address, e.g. signal:+15551234567")
+	if len(parts) != 2 || strings.TrimSpace(parts[1]) == "" {
+		return "", "", errors.New("to must include channel and address, e.g. signal:dm:user-uuid")
 	}
 	return parts[0], parts[1], nil
 }

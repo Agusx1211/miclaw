@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,6 +19,7 @@ import (
 	"github.com/agusx1211/miclaw/config"
 	"github.com/agusx1211/miclaw/model"
 	"github.com/agusx1211/miclaw/provider"
+	"github.com/agusx1211/miclaw/signal"
 	"github.com/agusx1211/miclaw/store"
 	"github.com/agusx1211/miclaw/tools"
 )
@@ -89,7 +91,7 @@ func TestBuild(t *testing.T) {
 	}
 }
 
-func TestStartSchedulerFiresRuntimeAddedJob(t *testing.T) {
+func TestStartSchedulerInjectsCronMessage(t *testing.T) {
 	root := t.TempDir()
 	scheduler, err := tools.NewScheduler(filepath.Join(root, "cron.db"))
 	if err != nil {
@@ -100,15 +102,8 @@ func TestStartSchedulerFiresRuntimeAddedJob(t *testing.T) {
 			t.Fatalf("close scheduler: %v", err)
 		}
 	})
-	jobs, err := scheduler.ListJobs()
-	if err != nil {
-		t.Fatalf("list jobs: %v", err)
-	}
-	if len(jobs) != 0 {
-		t.Fatalf("expected no startup jobs, got %d", len(jobs))
-	}
 
-	sqlStore, err := store.OpenSQLite(filepath.Join(root, "sessions.db"))
+	sqlStore, err := store.OpenSQLite(filepath.Join(root, "messages.db"))
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -124,10 +119,8 @@ func TestStartSchedulerFiresRuntimeAddedJob(t *testing.T) {
 	setSchedulerField(scheduler, "tick", 10*time.Millisecond)
 	setSchedulerField(scheduler, "now", func() time.Time { return time.Unix(0, now.Load()).UTC() })
 
-	ag := agent.NewAgent(sqlStore.SessionStore(), sqlStore.MessageStore(), nil, cronStubProvider{})
+	ag := agent.NewAgent(sqlStore.MessageStore(), nil, cronStubProvider{})
 	t.Cleanup(ag.Cancel)
-	events, unsubscribe := ag.Events().Subscribe()
-	defer unsubscribe()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -142,7 +135,14 @@ func TestStartSchedulerFiresRuntimeAddedJob(t *testing.T) {
 	}
 	now.Store(base.Add(time.Minute).UnixNano())
 
-	waitCronResponse(t, events, 2*time.Second)
+	waitMessageCount(t, sqlStore.MessageStore(), 2, 2*time.Second)
+	msgs, err := sqlStore.MessageStore().List(10, 0)
+	if err != nil {
+		t.Fatalf("list messages: %v", err)
+	}
+	if textPart(msgs[0]) != "[cron] ping" {
+		t.Fatalf("unexpected first message: %#v", msgs[0])
+	}
 }
 
 func TestInitRuntimeCreatesMissingWorkspace(t *testing.T) {
@@ -184,6 +184,309 @@ func TestInitRuntimeCreatesMissingWorkspace(t *testing.T) {
 	}
 }
 
+func TestSendSignalMessageRoutesDMAndGroup(t *testing.T) {
+	cfg := config.SignalConfig{TextChunkLimit: 0}
+	c := signal.NewClient("http://127.0.0.1:1", "+10000000000")
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	if err := sendSignalMessage(ctx, c, cfg, "signal:dm:user-1", "hello"); err == nil {
+		t.Fatal("expected send failure on fake client")
+	}
+	if err := sendSignalMessage(ctx, c, cfg, "signal:group:group-1", "hello"); err == nil {
+		t.Fatal("expected send failure on fake client")
+	}
+	if err := sendSignalMessage(ctx, c, cfg, "invalid", "hello"); err == nil {
+		t.Fatal("expected invalid target error")
+	}
+}
+
+func TestParseSignalTarget(t *testing.T) {
+	tests := []struct {
+		in      string
+		wantK   string
+		wantID  string
+		wantErr bool
+	}{
+		{in: "signal:dm:user-1", wantK: "dm", wantID: "user-1"},
+		{in: "signal:group:group-1", wantK: "group", wantID: "group-1"},
+		{in: "signal:dm:", wantErr: true},
+		{in: "signal:foo:bar", wantErr: true},
+		{in: "bad", wantErr: true},
+	}
+	for _, tt := range tests {
+		kind, id, err := parseSignalTarget(tt.in)
+		if tt.wantErr {
+			if err == nil {
+				t.Fatalf("parseSignalTarget(%q): expected error", tt.in)
+			}
+			continue
+		}
+		if err != nil {
+			t.Fatalf("parseSignalTarget(%q): %v", tt.in, err)
+		}
+		if kind != tt.wantK || id != tt.wantID {
+			t.Fatalf("parseSignalTarget(%q) = (%q, %q), want (%q, %q)", tt.in, kind, id, tt.wantK, tt.wantID)
+		}
+	}
+}
+
+func TestParseSignalCommand(t *testing.T) {
+	tests := []struct {
+		in   string
+		want string
+	}{
+		{in: "/new", want: "/new"},
+		{in: "  /compact  ", want: "/compact"},
+		{in: "/NEW", want: "/new"},
+		{in: "/noop", want: ""},
+		{in: "hello", want: ""},
+	}
+	for _, tt := range tests {
+		got := parseSignalCommand(tt.in)
+		if got != tt.want {
+			t.Fatalf("parseSignalCommand(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestTypingStateClearStopsTypingLoop(t *testing.T) {
+	st := newTypingState()
+	var mu sync.Mutex
+	calls := 0
+	send := func(context.Context, string) error {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return nil
+	}
+	if err := st.Start("signal:dm:user-1", 500*time.Millisecond, send); err != nil {
+		t.Fatalf("start typing: %v", err)
+	}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for {
+		mu.Lock()
+		n := calls
+		mu.Unlock()
+		if n > 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("typing did not send initial indicator")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	st.Clear("signal:dm:user-1")
+	mu.Lock()
+	afterClear := calls
+	mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	afterWait := calls
+	mu.Unlock()
+	if afterWait != afterClear {
+		t.Fatalf("typing calls increased after clear: %d -> %d", afterClear, afterWait)
+	}
+}
+
+func TestTypingStateTimeoutRemovesActiveEntry(t *testing.T) {
+	st := newTypingState()
+	send := func(context.Context, string) error { return nil }
+	if err := st.Start("signal:dm:user-1", 60*time.Millisecond, send); err != nil {
+		t.Fatalf("start typing: %v", err)
+	}
+	time.Sleep(120 * time.Millisecond)
+	st.mu.Lock()
+	_, ok := st.active["signal:dm:user-1"]
+	st.mu.Unlock()
+	if ok {
+		t.Fatal("typing entry should expire after timeout")
+	}
+}
+
+func TestTypingStateNoTimeoutKeepsEntryUntilClear(t *testing.T) {
+	st := newTypingState()
+	send := func(context.Context, string) error { return nil }
+	if err := st.Start("signal:dm:user-1", 0, send); err != nil {
+		t.Fatalf("start typing: %v", err)
+	}
+	time.Sleep(120 * time.Millisecond)
+	st.mu.Lock()
+	_, ok := st.active["signal:dm:user-1"]
+	st.mu.Unlock()
+	if !ok {
+		t.Fatal("typing entry should stay active without timeout")
+	}
+	st.Clear("signal:dm:user-1")
+}
+
+func TestTypingStateAutoStartUsesLatestSignalDMSource(t *testing.T) {
+	st := newTypingState()
+	st.SetAutoTarget("signal:group:abc")
+	st.SetAutoTarget("signal:dm:user-1")
+	var mu sync.Mutex
+	calls := 0
+	lastTo := ""
+	send := func(_ context.Context, to string) error {
+		mu.Lock()
+		calls++
+		lastTo = to
+		mu.Unlock()
+		return nil
+	}
+	if err := st.StartAuto(send); err != nil {
+		t.Fatalf("start auto typing: %v", err)
+	}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for {
+		mu.Lock()
+		n := calls
+		to := lastTo
+		mu.Unlock()
+		if n > 0 {
+			if to != "signal:dm:user-1" {
+				t.Fatalf("auto typing target = %q", to)
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("auto typing did not start")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	st.ClearAll()
+}
+
+func TestTypingStateAutoStartRunsOncePerSignalTargetSet(t *testing.T) {
+	st := newTypingState()
+	st.SetAutoTarget("signal:dm:user-1")
+	calls := 0
+	send := func(context.Context, string) error {
+		calls++
+		return nil
+	}
+	if err := st.StartAuto(send); err != nil {
+		t.Fatalf("start auto typing: %v", err)
+	}
+	if err := st.StartAuto(send); err != nil {
+		t.Fatalf("start auto typing second call: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("auto typing calls = %d", calls)
+	}
+	st.SetAutoTarget("signal:dm:user-1")
+	if err := st.StartAuto(send); err != nil {
+		t.Fatalf("start auto typing after reset: %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("auto typing calls after reset = %d", calls)
+	}
+	st.ClearAll()
+}
+
+func TestTypingStateClearAllStopsAllTargets(t *testing.T) {
+	st := newTypingState()
+	var mu sync.Mutex
+	calls := 0
+	send := func(context.Context, string) error {
+		mu.Lock()
+		calls++
+		mu.Unlock()
+		return nil
+	}
+	if err := st.Start("signal:dm:user-1", 0, send); err != nil {
+		t.Fatalf("start typing user-1: %v", err)
+	}
+	if err := st.Start("signal:dm:user-2", 0, send); err != nil {
+		t.Fatalf("start typing user-2: %v", err)
+	}
+	st.ClearAll()
+	mu.Lock()
+	afterClear := calls
+	mu.Unlock()
+	time.Sleep(100 * time.Millisecond)
+	mu.Lock()
+	afterWait := calls
+	mu.Unlock()
+	if afterWait != afterClear {
+		t.Fatalf("typing calls increased after clear all: %d -> %d", afterClear, afterWait)
+	}
+	st.mu.Lock()
+	n := len(st.active)
+	st.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("active entries = %d", n)
+	}
+}
+
+func TestTypingStateStopCallsStopCallback(t *testing.T) {
+	st := newTypingState()
+	send := func(context.Context, string) error { return nil }
+	stopped := ""
+	stop := func(_ context.Context, to string) error {
+		stopped = to
+		return nil
+	}
+	if err := st.Start("signal:dm:user-1", 0, send); err != nil {
+		t.Fatalf("start typing: %v", err)
+	}
+	if err := st.Stop("signal:dm:user-1", stop); err != nil {
+		t.Fatalf("stop typing: %v", err)
+	}
+	if stopped != "signal:dm:user-1" {
+		t.Fatalf("stopped target = %q", stopped)
+	}
+	st.mu.Lock()
+	_, ok := st.active["signal:dm:user-1"]
+	st.mu.Unlock()
+	if ok {
+		t.Fatal("typing entry should be removed after stop")
+	}
+}
+
+func TestTypingStateStopAllCallsStopCallback(t *testing.T) {
+	st := newTypingState()
+	send := func(context.Context, string) error { return nil }
+	stopped := map[string]int{}
+	stop := func(_ context.Context, to string) error {
+		stopped[to]++
+		return nil
+	}
+	if err := st.Start("signal:dm:user-1", 0, send); err != nil {
+		t.Fatalf("start typing user-1: %v", err)
+	}
+	if err := st.Start("signal:dm:user-2", 0, send); err != nil {
+		t.Fatalf("start typing user-2: %v", err)
+	}
+	if err := st.StopAll(stop); err != nil {
+		t.Fatalf("stop all typing: %v", err)
+	}
+	if stopped["signal:dm:user-1"] != 1 || stopped["signal:dm:user-2"] != 1 {
+		t.Fatalf("stop callbacks = %#v", stopped)
+	}
+	st.mu.Lock()
+	n := len(st.active)
+	st.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("active entries = %d", n)
+	}
+}
+
+func TestIsHeartbeatPrompt(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"health check", true},
+		{"HEARTBEAT please", true},
+		{"daily report", false},
+	}
+	for _, c := range cases {
+		if got := isHeartbeatPrompt(c.in); got != c.want {
+			t.Fatalf("isHeartbeatPrompt(%q)=%v want %v", c.in, got, c.want)
+		}
+	}
+}
+
 type cronStubProvider struct{}
 
 func (cronStubProvider) Stream(context.Context, []model.Message, []provider.ToolDef) <-chan provider.ProviderEvent {
@@ -203,58 +506,31 @@ func setSchedulerField(s *tools.Scheduler, field string, value any) {
 	reflect.NewAt(v.Type(), unsafe.Pointer(v.UnsafeAddr())).Elem().Set(reflect.ValueOf(value))
 }
 
-func waitCronResponse(t *testing.T, events <-chan agent.AgentEvent, timeout time.Duration) {
+func waitMessageCount(t *testing.T, ms store.MessageStore, want int, timeout time.Duration) {
 	t.Helper()
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	for {
-		select {
-		case ev := <-events:
-			if ev.SessionID != "cron" {
-				continue
-			}
-			if ev.Type == agent.EventError {
-				t.Fatalf("agent error: %v", ev.Error)
-			}
-			if ev.Type == agent.EventResponse {
-				return
-			}
-		case <-timer.C:
-			t.Fatal("timed out waiting for cron response event")
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		n, err := ms.Count()
+		if err != nil {
+			t.Fatalf("count messages: %v", err)
 		}
+		if n >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
+	n, err := ms.Count()
+	if err != nil {
+		t.Fatalf("count messages: %v", err)
+	}
+	t.Fatalf("timed out waiting for %d messages (got %d)", want, n)
 }
 
-func TestSubscribeSignalEventsForwardsError(t *testing.T) {
-	root := t.TempDir()
-	sqlStore, err := store.OpenSQLite(filepath.Join(root, "sessions.db"))
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+func textPart(msg *model.Message) string {
+	for _, part := range msg.Parts {
+		if txt, ok := part.(model.TextPart); ok {
+			return txt.Text
+		}
 	}
-	t.Cleanup(func() {
-		if err := sqlStore.Close(); err != nil {
-			t.Fatalf("close sqlite: %v", err)
-		}
-	})
-	ag := agent.NewAgent(sqlStore.SessionStore(), sqlStore.MessageStore(), nil, cronStubProvider{})
-	ch, unsubscribe := subscribeSignalEvents(ag)
-	defer unsubscribe()
-
-	ag.Events().Publish(agent.AgentEvent{
-		Type:      agent.EventError,
-		SessionID: "signal:dm:user-1",
-		Error:     errors.New("provider failed"),
-	})
-
-	select {
-	case ev := <-ch:
-		if ev.SessionID != "signal:dm:user-1" {
-			t.Fatalf("sessionID = %q", ev.SessionID)
-		}
-		if !strings.Contains(ev.Text, "provider failed") {
-			t.Fatalf("text = %q", ev.Text)
-		}
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("timed out waiting for signal error event")
-	}
+	return ""
 }

@@ -79,16 +79,3 @@ func ToProviderDefs(tools []Tool) []ToolDef {
 
 	return defs
 }
-
-type sessionIDKey struct{}
-
-func WithSessionID(ctx context.Context, sessionID string) context.Context {
-
-	return context.WithValue(ctx, sessionIDKey{}, sessionID)
-}
-
-func SessionIDFromContext(ctx context.Context) string {
-
-	v, _ := ctx.Value(sessionIDKey{}).(string)
-	return v
-}

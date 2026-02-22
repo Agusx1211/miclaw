@@ -5,84 +5,65 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func mainDeps() MainToolDeps {
 	return MainToolDeps{
-		Model:       "test-model",
 		SendMessage: func(context.Context, string, string) error { return nil },
-		IsActive:    func() bool { return false },
 	}
 }
 
-func TestMainAgentToolsReturns20UniqueTools(t *testing.T) {
-	got := MainAgentTools(mainDeps())
-	if len(got) != 20 {
-		t.Fatalf("want 20 tools, got %d", len(got))
-	}
-	seen := make(map[string]struct{}, len(got))
-	for _, g := range got {
-		if g.Name() == "" {
-			t.Fatalf("tool name is empty")
-		}
-		name := g.Name()
-		seen[name] = struct{}{}
-	}
-	if len(seen) != 20 {
-		t.Fatalf("tool names are not unique: got %d", len(seen))
-	}
-}
-
-func TestSubAgentToolsReturns6Tools(t *testing.T) {
-	got := SubAgentTools(nil, nil)
-	if len(got) != 6 {
-		t.Fatalf("want 6 tools, got %d", len(got))
-	}
-	seen := make(map[string]struct{}, len(got))
-	for _, g := range got {
-		if g.Name() == "" {
-			t.Fatalf("tool name is empty")
-		}
-		name := g.Name()
-		seen[name] = struct{}{}
-	}
-	if len(seen) != 6 {
-		t.Fatalf("tool names are not unique: got %d", len(seen))
-	}
-}
-
-func TestMainAgentToolsOmitsMessageWhenSendUnavailable(t *testing.T) {
+func mainDepsWithTyping() MainToolDeps {
 	deps := mainDeps()
-	deps.SendMessage = nil
-	got := MainAgentTools(deps)
-	for _, g := range got {
-		if g.Name() == "message" {
-			t.Fatal("unexpected message tool")
-		}
+	deps.StartTyping = func(context.Context, string, time.Duration) error { return nil }
+	deps.StopTyping = func(context.Context, string) error { return nil }
+	return deps
+}
+
+func TestMainAgentToolsReturns13UniqueTools(t *testing.T) {
+	got := MainAgentTools(mainDeps())
+	if len(got) != 13 {
+		t.Fatalf("want 13 tools, got %d", len(got))
 	}
-	if len(got) != 19 {
-		t.Fatalf("want 19 tools, got %d", len(got))
+	seen := make(map[string]struct{}, len(got))
+	for _, g := range got {
+		if g.Name() == "" {
+			t.Fatalf("tool name is empty")
+		}
+		name := g.Name()
+		seen[name] = struct{}{}
+	}
+	if len(seen) != 13 {
+		t.Fatalf("tool names are not unique: got %d", len(seen))
 	}
 }
 
-func TestSubAgentToolsAreSubsetOfMainTools(t *testing.T) {
-	mainTools := MainAgentTools(mainDeps())
-	subTools := SubAgentTools(nil, nil)
-	mainSet := make(map[string]struct{}, len(mainTools))
-	for _, tool := range mainTools {
-		mainSet[tool.Name()] = struct{}{}
+func TestMainAgentToolsIncludesTypingWhenConfigured(t *testing.T) {
+	got := MainAgentTools(mainDepsWithTyping())
+	if len(got) != 14 {
+		t.Fatalf("want 14 tools, got %d", len(got))
 	}
-	for _, tool := range subTools {
-		if _, ok := mainSet[tool.Name()]; !ok {
-			t.Fatalf("sub-agent tool %q not in main tools", tool.Name())
+	seen := make(map[string]struct{}, len(got))
+	for _, g := range got {
+		if g.Name() == "" {
+			t.Fatalf("tool name is empty")
 		}
+		name := g.Name()
+		seen[name] = struct{}{}
+	}
+	if len(seen) != 14 {
+		t.Fatalf("tool names are not unique: got %d", len(seen))
+	}
+	if _, ok := seen["typing"]; !ok {
+		t.Fatal("typing tool missing")
 	}
 }
 
 func TestToProviderDefsProducesValidJSON(t *testing.T) {
-	defs := ToProviderDefs(SubAgentTools(nil, nil))
-	if len(defs) != 6 {
-		t.Fatalf("want 6 defs, got %d", len(defs))
+	defs := ToProviderDefs(MainAgentTools(mainDeps()))
+	if len(defs) != 13 {
+		t.Fatalf("want 13 defs, got %d", len(defs))
 	}
 	for _, def := range defs {
 		if !json.Valid(def.Parameters) {
@@ -92,6 +73,20 @@ func TestToProviderDefsProducesValidJSON(t *testing.T) {
 		if err := json.Unmarshal(def.Parameters, &body); err != nil {
 			t.Fatalf("tool %q parameters are not valid JSON object: %v", def.Name, err)
 		}
+	}
+}
+
+func TestToProviderDefsIncludesTyping(t *testing.T) {
+	defs := ToProviderDefs(MainAgentTools(mainDepsWithTyping()))
+	if len(defs) != 14 {
+		t.Fatalf("want 14 defs, got %d", len(defs))
+	}
+	names := make(map[string]struct{}, len(defs))
+	for _, d := range defs {
+		names[d.Name] = struct{}{}
+	}
+	if _, ok := names["typing"]; !ok {
+		t.Fatal("typing tool def missing")
 	}
 }
 

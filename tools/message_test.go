@@ -25,13 +25,13 @@ func runMessageCall(t *testing.T, tool Tool, params map[string]any) (ToolResult,
 
 func TestMessageToolSendsSignalMessage(t *testing.T) {
 	var gotTarget, gotContent string
-	tool := messageTool(func(_ context.Context, recipient, content string) error {
-		gotTarget = recipient
+	tool := messageTool(func(_ context.Context, to, content string) error {
+		gotTarget = to
 		gotContent = content
 		return nil
 	})
 	got, err := runMessageCall(t, tool, map[string]any{
-		"target":  "signal:+15551234567",
+		"to":      "signal:dm:user-1",
 		"content": "hi",
 	})
 	if err != nil {
@@ -40,10 +40,10 @@ func TestMessageToolSendsSignalMessage(t *testing.T) {
 	if got.IsError {
 		t.Fatalf("unexpected tool error: %q", got.Content)
 	}
-	if gotTarget != "+15551234567" || gotContent != "hi" {
+	if gotTarget != "signal:dm:user-1" || gotContent != "hi" {
 		t.Fatalf("unexpected message payload: target=%q content=%q", gotTarget, gotContent)
 	}
-	if got.Content != "message sent to signal:+15551234567" {
+	if got.Content != "message sent to signal:dm:user-1" {
 		t.Fatalf("unexpected tool result: %q", got.Content)
 	}
 }
@@ -55,7 +55,7 @@ func TestMessageToolRejectsInvalidTarget(t *testing.T) {
 		return nil
 	})
 	got, err := runMessageCall(t, tool, map[string]any{
-		"target":  "badformat",
+		"to":      "badformat",
 		"content": "hi",
 	})
 	if err != nil {
@@ -67,7 +67,7 @@ func TestMessageToolRejectsInvalidTarget(t *testing.T) {
 	if called {
 		t.Fatal("sender should not be called for invalid target")
 	}
-	if !strings.Contains(got.Content, "target must include channel and address") {
+	if !strings.Contains(got.Content, "to must include channel and address") {
 		t.Fatalf("unexpected error: %q", got.Content)
 	}
 }
@@ -79,7 +79,7 @@ func TestMessageToolRejectsUnsupportedChannel(t *testing.T) {
 		return nil
 	})
 	got, err := runMessageCall(t, tool, map[string]any{
-		"target":  "slack:channel",
+		"to":      "slack:channel",
 		"content": "hi",
 	})
 	if err != nil {
@@ -103,7 +103,7 @@ func TestMessageToolRejectsEmptyContent(t *testing.T) {
 		return nil
 	})
 	got, err := runMessageCall(t, tool, map[string]any{
-		"target":  "signal:+15551234567",
+		"to":      "signal:dm:user-1",
 		"content": "   ",
 	})
 	if err != nil {
@@ -125,7 +125,7 @@ func TestMessageToolPropagatesSenderError(t *testing.T) {
 		return errors.New("gateway failure")
 	})
 	got, err := runMessageCall(t, tool, map[string]any{
-		"target":  "signal:+15551234567",
+		"to":      "signal:dm:user-1",
 		"content": "hi",
 	})
 	if err != nil {

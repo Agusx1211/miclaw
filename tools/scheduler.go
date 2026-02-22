@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	cronSessionID   = "cron"
+	cronSource      = "cron"
 	defaultCronTick = time.Minute
 	cronTableSQL    = `CREATE TABLE IF NOT EXISTS cron_jobs (
 		id TEXT PRIMARY KEY,
@@ -23,7 +23,7 @@ const (
 	cronInsertSQL = `INSERT INTO cron_jobs (id, expression, prompt, created_at) VALUES (?, ?, ?, ?)`
 )
 
-// Scheduler runs cron jobs and injects prompts through an enqueue callback.
+// Scheduler runs cron jobs and injects prompts through an inject callback.
 type Scheduler struct {
 	db   *sql.DB
 	mu   sync.Mutex
@@ -70,7 +70,7 @@ func (s *Scheduler) Close() error {
 	return s.db.Close()
 }
 
-func (s *Scheduler) Start(ctx context.Context, enqueue func(sessionID, content string)) {
+func (s *Scheduler) Start(ctx context.Context, inject func(source, content string)) {
 	s.mu.Lock()
 	runCtx, cancel := context.WithCancel(ctx)
 	s.stop = cancel
@@ -84,7 +84,7 @@ func (s *Scheduler) Start(ctx context.Context, enqueue func(sessionID, content s
 	go func() {
 		defer ticker.Stop()
 		for {
-			s.enqueueDue(enqueue)
+			s.enqueueDue(inject)
 			select {
 			case <-runCtx.Done():
 				return
@@ -148,7 +148,7 @@ func (s *Scheduler) NextRun(expression string) (time.Time, error) {
 	return expr.NextAfter(s.now()), nil
 }
 
-func (s *Scheduler) enqueueDue(enqueue func(sessionID, content string)) {
+func (s *Scheduler) enqueueDue(inject func(source, content string)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now().UTC()
@@ -156,7 +156,7 @@ func (s *Scheduler) enqueueDue(enqueue func(sessionID, content string)) {
 		if now.Before(job.nextRun) {
 			continue
 		}
-		enqueue(cronSessionID, job.prompt)
+		inject(cronSource, job.prompt)
 		job.nextRun = job.expr.NextAfter(now)
 		s.jobs[id] = job
 	}
