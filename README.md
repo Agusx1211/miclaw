@@ -1,8 +1,16 @@
+```
+               _        _
+   _ __ ___   (_)  ___ | |  __ _ __      __
+  | '_ ` _ \  | | / __|| | / _` |\ \ /\ / /
+  | | | | | | | || (__ | || (_| | \ V  V /
+  |_| |_| |_| |_| \___||_| \__,_|  \_/\_/
+```
+
 # Miclaw
 
 A lean Go port of [openclaw](https://github.com/agusx1211/openclaw). One agent. One thread. Minimal surface area.
 
-The original codebase grew to 450k+ lines. Miclaw delivers the same core functionality in ~20k lines of Go.
+The original codebase grew to 450k+ lines. Miclaw delivers the same core functionality in ~22k lines of Go.
 
 ## Requirements
 
@@ -94,6 +102,7 @@ Provider fields:
 | `model` | *(required)* | Model name or `provider/model` for OpenRouter |
 | `max_tokens` | `8192` | Max output tokens |
 | `thinking_effort` | | Codex only: `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
+| `store` | `false` | Codex only: enable conversation storage for reasoning models |
 
 ### Signal Integration
 
@@ -131,7 +140,6 @@ Signal runtime behavior:
 - Inbound events are injected into the single thread with source tags like `[signal:dm:<uuid>]` and `[signal:group:<id>]`.
 - Outbound replies use the `message` tool target format `signal:dm:<uuid>` or `signal:group:<id>`.
 - Typing starts when a Signal-triggered run starts, is refreshed while active, and is explicitly stopped when the run sleeps.
-- The `typing` tool is available for manual `on`/`off` control (with optional `seconds` timeout when turning `on`).
 
 Signal slash commands:
 
@@ -346,8 +354,7 @@ The Dockerfile builds a minimal Alpine image with the miclaw binary.
 | Automation | `cron` |
 | Messaging | `message` |
 | Memory | `memory_search`, `memory_get` |
-
-When Signal is enabled, the runtime also exposes `typing`.
+| Lifecycle | `sleep` |
 
 ### Context Compaction
 
