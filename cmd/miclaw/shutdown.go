@@ -63,6 +63,9 @@ func shutdownRun(deps *runtimeDeps, cancel context.CancelFunc, wg *sync.WaitGrou
 		_ = shutdownMemStoreClose(deps.memStore)
 	}
 	_ = shutdownSQLStoreClose(deps.sqlStore)
+	if deps.bridge != nil {
+		_ = deps.bridge.Close()
+	}
 }
 
 func watchSecondSignal(sigCh <-chan os.Signal, stderr io.Writer) func() {

@@ -3,7 +3,6 @@ package tools
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"regexp"
 	"strconv"
@@ -171,121 +170,25 @@ func TestExecContextCancellation(t *testing.T) {
 	}
 }
 
-func TestExecSandboxRoutesHostCommandThroughSSH(t *testing.T) {
-	ssh := &fakeSSHExecutor{output: "host-output", exitCode: 0}
-	called := false
-	runner := newExecRunner(
-		config.SandboxConfig{Enabled: true, SSHKeyPath: "/tmp/key", HostUser: "runner"},
-		[]string{"git"},
-		"host.docker.internal",
-		func(keyPath, user, host string) (hostExecutor, error) {
-			called = true
-			if keyPath != "/tmp/key" || user != "runner" || host != "host.docker.internal" {
-				t.Fatalf("unexpected ssh config: %q %q %q", keyPath, user, host)
-			}
-			return ssh, nil
-		},
-	)
-	got, err := runExecCallWithRunner(t, context.Background(), runner, map[string]any{
-		"command": "git status",
+func TestExecSandboxAllowlistedCommandsRunLocally(t *testing.T) {
+	raw, err := json.Marshal(map[string]any{"command": "git status"})
+	if err != nil {
+		t.Fatalf("marshal exec params: %v", err)
+	}
+	got, err := execToolWithSandbox(config.SandboxConfig{
+		Enabled:    true,
+		SSHKeyPath: "/tmp/miclaw-non-existent-key",
+		HostUser:   "runner",
+	}).Run(context.Background(), model.ToolCallPart{
+		ID:         "1",
+		Name:       "exec",
+		Parameters: raw,
 	})
 	if err != nil {
 		t.Fatalf("tool call: %v", err)
 	}
-	if !called {
-		t.Fatal("expected ssh executor to be used")
-	}
-	if got.IsError {
-		t.Fatalf("unexpected tool error: %s", got.Content)
-	}
-	if code := execResultExitCode(t, got.Content); code != 0 {
-		t.Fatalf("want exit code 0, got %d", code)
-	}
-	if out := execResultOutput(got.Content); !strings.Contains(out, "host-output") {
-		t.Fatalf("missing host output: %q", out)
-	}
-	if ssh.command != "git status" {
-		t.Fatalf("unexpected command: %q", ssh.command)
-	}
-}
-
-func TestExecSandboxRunsNonHostCommandsLocally(t *testing.T) {
-	called := false
-	runner := newExecRunner(
-		config.SandboxConfig{Enabled: true, SSHKeyPath: "/tmp/key", HostUser: "runner"},
-		[]string{"git"},
-		"host.docker.internal",
-		func(string, string, string) (hostExecutor, error) {
-			called = true
-			return &fakeSSHExecutor{}, nil
-		},
-	)
-	got, err := runExecCallWithRunner(t, context.Background(), runner, map[string]any{
-		"command": "echo local",
-	})
-	if err != nil {
-		t.Fatalf("tool call: %v", err)
-	}
-	if got.IsError {
-		t.Fatalf("unexpected tool error: %s", got.Content)
-	}
-	if called {
-		t.Fatal("unexpected ssh executor call for local command")
-	}
-	if !strings.Contains(execResultOutput(got.Content), "local") {
-		t.Fatalf("missing local output: %q", got.Content)
-	}
-}
-
-func TestExecSandboxReportsSSHSetupErrors(t *testing.T) {
-	runner := newExecRunner(
-		config.SandboxConfig{Enabled: true, SSHKeyPath: "/tmp/key", HostUser: "runner"},
-		[]string{"git"},
-		"host.docker.internal",
-		func(string, string, string) (hostExecutor, error) {
-			return nil, errors.New("bad key")
-		},
-	)
-	got, err := runExecCallWithRunner(t, context.Background(), runner, map[string]any{
-		"command": "git status",
-	})
-	if err != nil {
-		t.Fatalf("tool call: %v", err)
-	}
-	if !got.IsError {
-		t.Fatalf("expected tool error, got %q", got.Content)
-	}
-	if !strings.Contains(got.Content, "failed to start command: bad key") {
-		t.Fatalf("unexpected error: %q", got.Content)
-	}
-}
-
-func TestExecSandboxRejectsBackgroundHostCommands(t *testing.T) {
-	called := false
-	runner := newExecRunner(
-		config.SandboxConfig{Enabled: true, SSHKeyPath: "/tmp/key", HostUser: "runner"},
-		[]string{"git"},
-		"host.docker.internal",
-		func(string, string, string) (hostExecutor, error) {
-			called = true
-			return &fakeSSHExecutor{}, nil
-		},
-	)
-	got, err := runExecCallWithRunner(t, context.Background(), runner, map[string]any{
-		"command":    "git status",
-		"background": true,
-	})
-	if err != nil {
-		t.Fatalf("tool call: %v", err)
-	}
-	if !got.IsError {
-		t.Fatalf("expected error for background host command: %q", got.Content)
-	}
-	if called {
-		t.Fatal("ssh executor should not be created for unsupported background mode")
-	}
-	if !strings.Contains(got.Content, "background mode is not supported for host commands") {
-		t.Fatalf("unexpected error: %q", got.Content)
+	if got.IsError && strings.Contains(got.Content, "failed to start command") {
+		t.Fatalf("exec should not route through ssh: %q", got.Content)
 	}
 }
 
@@ -306,37 +209,6 @@ func runExecCall(t *testing.T, ctx context.Context, params map[string]any) (Tool
 		Name:       "exec",
 		Parameters: raw,
 	})
-}
-
-func runExecCallWithRunner(t *testing.T, ctx context.Context, runner execRunner, params map[string]any) (ToolResult, error) {
-	t.Helper()
-	raw, err := json.Marshal(params)
-	if err != nil {
-		t.Fatalf("marshal exec params: %v", err)
-	}
-	if _, ok := params["working_dir"]; ok {
-		path := params["working_dir"].(string)
-		if _, err := os.Stat(path); err != nil {
-			t.Fatalf("working_dir %q: %v", path, err)
-		}
-	}
-	return runner.run(ctx, model.ToolCallPart{
-		ID:         "1",
-		Name:       "exec",
-		Parameters: raw,
-	})
-}
-
-type fakeSSHExecutor struct {
-	command  string
-	output   string
-	exitCode int
-	err      error
-}
-
-func (f *fakeSSHExecutor) Execute(_ context.Context, command string) (string, int, error) {
-	f.command = command
-	return f.output, f.exitCode, f.err
 }
 
 func execResultExitCode(t *testing.T, content string) int {

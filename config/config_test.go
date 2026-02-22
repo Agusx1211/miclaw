@@ -300,3 +300,46 @@ func TestLoadRejectsInvalidThinkingEffort(t *testing.T) {
 		t.Fatalf("expected provider.thinking_effort error, got: %v", err)
 	}
 }
+
+func TestLoadRejectsSandboxHostCommandsWithoutSSHKey(t *testing.T) {
+	p := writeConfigFile(t, `{
+		"provider": {
+			"backend": "lmstudio",
+			"model": "m"
+		},
+		"sandbox": {
+			"enabled": true,
+			"host_commands": ["git"]
+		}
+	}`)
+
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("expected sandbox host command validation error")
+	}
+	if !strings.Contains(err.Error(), "sandbox.ssh_key_path") {
+		t.Fatalf("expected sandbox.ssh_key_path error, got: %v", err)
+	}
+}
+
+func TestLoadRejectsSandboxHostCommandsWithSpaces(t *testing.T) {
+	p := writeConfigFile(t, `{
+		"provider": {
+			"backend": "lmstudio",
+			"model": "m"
+		},
+		"sandbox": {
+			"enabled": true,
+			"ssh_key_path": "~/.ssh/id_ed25519",
+			"host_commands": ["git status"]
+		}
+	}`)
+
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("expected sandbox host command name validation error")
+	}
+	if !strings.Contains(err.Error(), "sandbox.host_commands[0]") {
+		t.Fatalf("expected sandbox.host_commands[0] error, got: %v", err)
+	}
+}

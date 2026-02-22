@@ -40,3 +40,29 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 
 	return tools
 }
+
+func BridgeableToolNames() map[string]bool {
+	return map[string]bool{
+		"read":        true,
+		"write":       true,
+		"edit":        true,
+		"apply_patch": true,
+		"grep":        true,
+		"glob":        true,
+		"ls":          true,
+		"exec":        true,
+	}
+}
+
+func BridgeTools() []Tool {
+	return []Tool{
+		ReadTool(),
+		writeTool(),
+		editTool(),
+		patchTool(),
+		grepTool(),
+		globTool(),
+		lsTool(),
+		execTool(),
+	}
+}

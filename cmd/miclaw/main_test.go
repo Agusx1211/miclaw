@@ -184,6 +184,181 @@ func TestInitRuntimeCreatesMissingWorkspace(t *testing.T) {
 	}
 }
 
+func TestBuildSandboxBridgeRunArgsIncludesWorkspaceAndCustomMounts(t *testing.T) {
+	root := t.TempDir()
+	exePath := filepath.Join(root, "miclaw")
+	workspace := filepath.Join(root, "workspace")
+	statePath := filepath.Join(root, "state")
+	customHost := filepath.Join(root, "ref")
+	cfg := config.Default()
+	cfg.Provider = config.ProviderConfig{
+		Backend: "lmstudio",
+		Model:   "test-model",
+	}
+	cfg.Sandbox.Enabled = true
+	cfg.Sandbox.Network = "bridge"
+	cfg.Workspace = workspace
+	cfg.StatePath = statePath
+	cfg.Sandbox.Mounts = []config.Mount{
+		{Host: customHost, Container: "/ref", Mode: "ro"},
+	}
+	args, err := buildSandboxBridgeRunArgs(exePath, &cfg)
+	if err != nil {
+		t.Fatalf("build sandbox bridge args: %v", err)
+	}
+	absExe, err := filepath.Abs(exePath)
+	if err != nil {
+		t.Fatalf("abs exe path: %v", err)
+	}
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		t.Fatalf("abs workspace path: %v", err)
+	}
+	absState, err := filepath.Abs(statePath)
+	if err != nil {
+		t.Fatalf("abs state path: %v", err)
+	}
+	absCustom, err := filepath.Abs(customHost)
+	if err != nil {
+		t.Fatalf("abs custom path: %v", err)
+	}
+	if len(args) == 0 || args[0] != "run" {
+		t.Fatalf("missing docker run command in %q", args)
+	}
+	if !containsArg(args, "-d") {
+		t.Fatalf("missing detached mode in %q", args)
+	}
+	if !containsArg(args, "--rm") {
+		t.Fatalf("missing auto-remove in %q", args)
+	}
+	if !containsArg(args, "--network=bridge") {
+		t.Fatalf("missing network arg in %q", args)
+	}
+	if !containsArgPair(args, "--workdir", absWorkspace) {
+		t.Fatalf("missing workdir arg in %q", args)
+	}
+	if !containsArgPair(args, "-e", sandboxChildEnv+"=1") {
+		t.Fatalf("missing sandbox child env in %q", args)
+	}
+	if !containsArgPair(args, "--entrypoint", "sh") {
+		t.Fatalf("missing shell entrypoint in %q", args)
+	}
+	if !containsArg(args, sandboxRuntimeImage) {
+		t.Fatalf("missing image arg in %q", args)
+	}
+	if containsArg(args, "-config") {
+		t.Fatalf("unexpected config arg in %q", args)
+	}
+	if !containsArgPair(args, "--mount", "type=bind,source="+absExe+",target="+sandboxEntrypoint+",readonly") {
+		t.Fatalf("missing executable mount in %q", args)
+	}
+	if !containsArgPair(args, "--mount", "type=bind,source="+absWorkspace+",target="+absWorkspace) {
+		t.Fatalf("missing workspace mount in %q", args)
+	}
+	if !containsArgPair(args, "--mount", "type=bind,source="+absCustom+",target=/ref,readonly") {
+		t.Fatalf("missing custom mount in %q", args)
+	}
+	if containsArgPair(args, "--mount", "type=bind,source="+absState+",target="+absState) {
+		t.Fatalf("unexpected state mount in %q", args)
+	}
+}
+
+func TestBuildSandboxBridgeRunArgsDeduplicatesIdenticalMounts(t *testing.T) {
+	root := t.TempDir()
+	exePath := filepath.Join(root, "miclaw")
+	workspace := filepath.Join(root, "workspace")
+	cfg := config.Default()
+	cfg.Provider = config.ProviderConfig{
+		Backend: "lmstudio",
+		Model:   "test-model",
+	}
+	cfg.Sandbox.Enabled = true
+	cfg.Workspace = workspace
+	cfg.StatePath = filepath.Join(root, "state")
+	cfg.Sandbox.Mounts = []config.Mount{
+		{Host: workspace, Container: workspace, Mode: "rw"},
+	}
+	args, err := buildSandboxBridgeRunArgs(exePath, &cfg)
+	if err != nil {
+		t.Fatalf("build sandbox bridge args: %v", err)
+	}
+	absWorkspace, err := filepath.Abs(workspace)
+	if err != nil {
+		t.Fatalf("abs workspace path: %v", err)
+	}
+	spec := "type=bind,source=" + absWorkspace + ",target=" + absWorkspace
+	if countArgPair(args, "--mount", spec) != 1 {
+		t.Fatalf("expected one workspace mount, got args=%q", args)
+	}
+}
+
+func TestBuildSandboxBridgeRunArgsAddsHostCommandBridge(t *testing.T) {
+	root := t.TempDir()
+	exePath := filepath.Join(root, "miclaw")
+	workspace := filepath.Join(root, "workspace")
+	statePath := filepath.Join(root, "state")
+	keyPath := filepath.Join(root, "id_ed25519")
+	if err := os.WriteFile(keyPath, []byte("test-key"), 0o600); err != nil {
+		t.Fatalf("write key file: %v", err)
+	}
+	cfg := config.Default()
+	cfg.Provider = config.ProviderConfig{
+		Backend: "lmstudio",
+		Model:   "test-model",
+	}
+	cfg.Sandbox.Enabled = true
+	cfg.Sandbox.Network = "none"
+	cfg.Sandbox.HostUser = "runner"
+	cfg.Sandbox.SSHKeyPath = keyPath
+	cfg.Sandbox.HostCommands = []string{"git", "docker"}
+	cfg.Workspace = workspace
+	cfg.StatePath = statePath
+	args, err := buildSandboxBridgeRunArgs(exePath, &cfg)
+	if err != nil {
+		t.Fatalf("build sandbox bridge args: %v", err)
+	}
+	absState, err := filepath.Abs(statePath)
+	if err != nil {
+		t.Fatalf("abs state path: %v", err)
+	}
+	absKey, err := filepath.Abs(keyPath)
+	if err != nil {
+		t.Fatalf("abs key path: %v", err)
+	}
+	shimHostPath := filepath.Join(absState, sandboxHostBinHostDir)
+	if !containsArgPair(args, "--add-host", sandboxDockerHost+":"+sandboxDockerHostGateway) {
+		t.Fatalf("missing --add-host in %q", args)
+	}
+	if !containsArgPair(args, "-e", sandboxShimHostEnv+"="+sandboxDockerHost) {
+		t.Fatalf("missing shim host env in %q", args)
+	}
+	if !containsArgPair(args, "-e", sandboxShimUserEnv+"="+cfg.Sandbox.HostUser) {
+		t.Fatalf("missing shim user env in %q", args)
+	}
+	if !containsArgPair(args, "-e", sandboxShimKeyEnv+"="+sandboxSSHKeyContPath) {
+		t.Fatalf("missing shim key env in %q", args)
+	}
+	if !containsArgPair(args, "-e", "PATH="+sandboxHostBinContDir+":"+sandboxDefaultPATH) {
+		t.Fatalf("missing PATH shim env in %q", args)
+	}
+	if !containsArgPair(args, "--mount", "type=bind,source="+absKey+",target="+sandboxSSHKeyContPath+",readonly") {
+		t.Fatalf("missing key mount in %q", args)
+	}
+	if !containsArgPair(args, "--mount", "type=bind,source="+shimHostPath+",target="+sandboxHostBinContDir+",readonly") {
+		t.Fatalf("missing shim mount in %q", args)
+	}
+	for _, command := range cfg.Sandbox.HostCommands {
+		raw, err := os.ReadFile(filepath.Join(shimHostPath, command))
+		if err != nil {
+			t.Fatalf("read shim %q: %v", command, err)
+		}
+		content := string(raw)
+		if !strings.Contains(content, "ssh -tt") || !strings.Contains(content, "ssh -T") {
+			t.Fatalf("unexpected shim content for %q: %q", command, content)
+		}
+	}
+}
+
 func TestSendSignalMessageRoutesDMAndGroup(t *testing.T) {
 	cfg := config.SignalConfig{TextChunkLimit: 0}
 	c := signal.NewClient("http://127.0.0.1:1", "+10000000000")
@@ -533,4 +708,32 @@ func textPart(msg *model.Message) string {
 		}
 	}
 	return ""
+}
+
+func containsArg(args []string, want string) bool {
+	for _, arg := range args {
+		if arg == want {
+			return true
+		}
+	}
+	return false
+}
+
+func containsArgPair(args []string, key, value string) bool {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == key && args[i+1] == value {
+			return true
+		}
+	}
+	return false
+}
+
+func countArgPair(args []string, key, value string) int {
+	count := 0
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == key && args[i+1] == value {
+			count++
+		}
+	}
+	return count
 }

@@ -198,7 +198,8 @@ Hybrid vector + full-text search over workspace markdown files.
 
 ### Sandbox
 
-Run the agent inside a Docker container with controlled network and filesystem access.
+Keep `miclaw` on the host, but execute tool calls inside a managed Docker sandbox container.
+The container is started when `sandbox.enabled=true`, kept alive while miclaw runs, and stopped on shutdown.
 
 ```json
 {
@@ -217,9 +218,16 @@ Run the agent inside a Docker container with controlled network and filesystem a
 |-------|---------|-------------|
 | `enabled` | `false` | Enable sandboxing |
 | `network` | `none` | `none`, `host`, `bridge`, or a custom network name |
-| `mounts` | `[]` | Bind mounts with `host`, `container`, and `mode` (`ro`/`rw`) |
+| `mounts` | `[]` | Extra bind mounts with `host`, `container`, and `mode` (`ro`/`rw`) |
 | `ssh_key_path` | | SSH key for host command execution |
 | `host_user` | `pipo-runner` | Host user for SSH commands |
+| `host_commands` | `[]` | Command shims exposed inside sandbox and proxied to host via SSH |
+
+When sandboxing is enabled, miclaw always mounts:
+- The workspace path (`rw`)
+- The miclaw executable (`ro`) for internal tool-call dispatch
+
+Tool calls are routed into the sandbox for filesystem/exec tools (`read`, `write`, `edit`, `apply_patch`, `grep`, `glob`, `ls`, `exec`).
 
 ### Full Config Reference
 
@@ -332,8 +340,8 @@ The Dockerfile builds a minimal Alpine image with the miclaw binary and an opens
 
 | Category | Tools |
 |----------|-------|
-| Filesystem | `read`, `write`, `edit`, `patch`, `grep`, `glob`, `ls` |
-| Runtime | `exec`, `process` |
+| Filesystem | `read`, `write`, `edit`, `apply_patch`, `grep`, `glob`, `ls` |
+| Runtime | `exec`, `process` (not exposed when sandbox is enabled) |
 | Automation | `cron` |
 | Messaging | `message` |
 | Memory | `memory_search`, `memory_get` |

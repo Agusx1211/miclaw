@@ -14,7 +14,6 @@ import (
 
 	"github.com/agusx1211/miclaw/config"
 	"github.com/agusx1211/miclaw/model"
-	"github.com/agusx1211/miclaw/sandbox"
 )
 
 const (
@@ -22,24 +21,11 @@ const (
 	execMaxOutputChars   = 100000
 	execOutputTruncated  = "[output truncated]"
 	execKillGraceTimeout = 5 * time.Second
-	execSSHHost          = "host.docker.internal"
 )
 
 var execProcessManager = NewProcManager()
-var hostCommandAllowlist = []string{"docker", "git", "systemctl", "journalctl"}
 
-type hostExecutor interface {
-	Execute(ctx context.Context, command string) (string, int, error)
-}
-
-type hostExecutorFactory func(keyPath, user, host string) (hostExecutor, error)
-
-type execRunner struct {
-	sandbox  config.SandboxConfig
-	allow    []string
-	host     string
-	newSSHFn hostExecutorFactory
-}
+type execRunner struct{}
 
 type execParams struct {
 	Command    string
@@ -52,8 +38,8 @@ func execTool() Tool {
 	return execToolWithSandbox(config.SandboxConfig{})
 }
 
-func execToolWithSandbox(cfg config.SandboxConfig) Tool {
-	runner := newExecRunner(cfg, hostCommandAllowlist, execSSHHost, newHostExecutor)
+func execToolWithSandbox(_ config.SandboxConfig) Tool {
+	runner := execRunner{}
 	return tool{
 		name: "exec",
 		desc: "Execute a shell command and return combined stdout/stderr output",
@@ -83,50 +69,15 @@ func execToolWithSandbox(cfg config.SandboxConfig) Tool {
 	}
 }
 
-func newExecRunner(
-	cfg config.SandboxConfig,
-	allow []string,
-	host string,
-	newSSHFn hostExecutorFactory,
-) execRunner {
-	return execRunner{
-		sandbox:  cfg,
-		allow:    allow,
-		host:     host,
-		newSSHFn: newSSHFn,
-	}
-}
-
-func newHostExecutor(keyPath, user, host string) (hostExecutor, error) {
-	return sandbox.NewSSHExecutor(keyPath, user, host)
-}
-
 func (r execRunner) run(ctx context.Context, call model.ToolCallPart) (ToolResult, error) {
 	params, err := parseExecParams(call.Parameters)
 	if err != nil {
 		return ToolResult{Content: err.Error(), IsError: true}, nil
 	}
-	if r.shouldRunOnHost(params.Command) {
-		if params.Background {
-			return asExecResult(
-				-1,
-				"failed to start command: background mode is not supported for host commands",
-				"",
-			), nil
-		}
-		return r.runExecHost(ctx, params), nil
-	}
 	if params.Background {
 		return runExecBackground(params), nil
 	}
 	return runExecLocal(ctx, params), nil
-}
-
-func (r execRunner) shouldRunOnHost(command string) bool {
-	if !r.sandbox.Enabled || r.sandbox.SSHKeyPath == "" {
-		return false
-	}
-	return sandbox.IsHostCommand(command, r.allow)
 }
 
 func runExecBackground(params execParams) ToolResult {
@@ -148,37 +99,6 @@ func localExecCommand(params execParams) *exec.Cmd {
 		cmd.Dir = params.WorkingDir
 	}
 	return cmd
-}
-
-func (r execRunner) runExecHost(ctx context.Context, params execParams) ToolResult {
-	exec, err := r.newSSHFn(r.sandbox.SSHKeyPath, r.sandbox.HostUser, r.host)
-	if err != nil {
-		return asExecResult(-1, fmt.Sprintf("failed to start command: %v", err), "")
-	}
-	exitCode, output, status := runForegroundHostCommand(ctx, exec, params.Command, params.Timeout)
-	return asExecResult(exitCode, status, output)
-}
-
-func runForegroundHostCommand(
-	ctx context.Context,
-	exec hostExecutor,
-	command string,
-	timeout int,
-) (int, string, string) {
-	runCtx, cancel := context.WithTimeout(ctx, time.Duration(timeout)*time.Second)
-	defer cancel()
-	output, exitCode, err := exec.Execute(runCtx, command)
-	output = truncateExecOutput(output)
-	if err == nil {
-		return exitCode, output, ""
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return exitCode, output, "timeout"
-	}
-	if errors.Is(err, context.Canceled) {
-		return exitCode, output, "canceled"
-	}
-	return exitCode, output, fmt.Sprintf("failed to start command: %v", err)
 }
 
 func asExecResult(exitCode int, status, output string) ToolResult {

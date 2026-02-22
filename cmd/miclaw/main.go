@@ -40,12 +40,14 @@ type runtimeDeps struct {
 	agent       *agent.Agent
 	signal      *signalpipe.Client
 	typing      *typingState
+	bridge      *sandboxBridge
 }
 
 type cliFlags struct {
 	configPath  string
 	showVersion bool
 	setup       bool
+	toolCall    string
 }
 
 func main() {
@@ -64,6 +66,9 @@ func run(args []string, stdout, stderr io.Writer) error {
 	if flags.showVersion {
 		fmt.Fprintln(stdout, versionString())
 		return nil
+	}
+	if flags.toolCall != "" {
+		return runToolCall(flags.toolCall, stdout)
 	}
 	configPath, err := expandHome(flags.configPath)
 	if err != nil {
@@ -128,6 +133,7 @@ func parseFlags(args []string) (cliFlags, error) {
 	showVersion := fs.Bool("version", false, "print version and exit")
 	setupRun := fs.Bool("setup", false, "run setup/configuration TUI and exit")
 	configureRun := fs.Bool("configure", false, "run setup/configuration TUI and exit")
+	toolCall := fs.String("tool-call", "", "internal: execute one tool call and exit")
 	if err := fs.Parse(args); err != nil {
 		return cliFlags{}, err
 	}
@@ -138,6 +144,7 @@ func parseFlags(args []string) (cliFlags, error) {
 		configPath:  *configPath,
 		showVersion: *showVersion,
 		setup:       *setupRun || *configureRun,
+		toolCall:    *toolCall,
 	}, nil
 }
 
@@ -150,6 +157,21 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 	cfg, err := config.Load(path)
 	if err != nil {
 		return nil, err
+	}
+	var bridge *sandboxBridge
+	if cfg.Sandbox.Enabled && !isSandboxChild() {
+		bridge, err = startSandboxBridge(cfg)
+		if err != nil {
+			return nil, err
+		}
+	}
+	cleanupBridge := bridge != nil
+	if bridge != nil {
+		defer func() {
+			if cleanupBridge {
+				_ = bridge.Close()
+			}
+		}()
 	}
 	if err := ensureRuntimePaths(cfg); err != nil {
 		return nil, err
@@ -213,6 +235,9 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		StartTyping: startTyping,
 		StopTyping:  stopTyping,
 	})
+	if bridge != nil {
+		toolList = wrapToolsWithSandboxBridge(toolList, bridge)
+	}
 	ag = agent.NewAgent(sqlStore.Messages, toolList, prov)
 	ag.SetWorkspace(workspace)
 	ag.SetSkills(skills)
@@ -236,6 +261,7 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		log.Printf("[agent] "+format, args...)
 	})
 
+	cleanupBridge = false
 	return &runtimeDeps{
 		cfg:         cfg,
 		sqlStore:    sqlStore,
@@ -245,6 +271,7 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		agent:       ag,
 		signal:      signalClient,
 		typing:      typing,
+		bridge:      bridge,
 	}, nil
 }
 
@@ -344,8 +371,22 @@ func startSignalPipeline(ctx context.Context, deps *runtimeDeps, wg *sync.WaitGr
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := pipeline.Start(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		for {
+			err := pipeline.Start(ctx)
+			if err == nil || errors.Is(err, context.Canceled) {
+				return
+			}
+			if strings.Contains(err.Error(), "signal events stream closed") {
+				log.Printf("[signal] pipeline closed; retrying in 1s")
+				select {
+				case <-ctx.Done():
+					return
+				case <-time.After(time.Second):
+					continue
+				}
+			}
 			errCh <- fmt.Errorf("signal pipeline: %v", err)
+			return
 		}
 	}()
 }
