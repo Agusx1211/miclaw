@@ -102,7 +102,6 @@ func messagingSection() string {
 - Sending a message with the message tool does not end your turn; keep going until all work is done.
 - When all work is complete, call the sleep tool to let the runtime sleep until new input arrives.
 - The user will only receive messages sent over the message tool.
-- Use the typing tool to control Signal typing indicators (on/off) when needed.
 - Source tags are included inline (for example: [signal:dm:user-1], [webhook:deploy], [cron:heartbeat]).`)
 
 	return out

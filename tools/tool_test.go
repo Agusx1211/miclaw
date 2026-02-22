@@ -5,20 +5,12 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
-	"time"
 )
 
 func mainDeps() MainToolDeps {
 	return MainToolDeps{
 		SendMessage: func(context.Context, string, string) error { return nil },
 	}
-}
-
-func mainDepsWithTyping() MainToolDeps {
-	deps := mainDeps()
-	deps.StartTyping = func(context.Context, string, time.Duration) error { return nil }
-	deps.StopTyping = func(context.Context, string) error { return nil }
-	return deps
 }
 
 func TestMainAgentToolsReturns14UniqueTools(t *testing.T) {
@@ -42,27 +34,6 @@ func TestMainAgentToolsReturns14UniqueTools(t *testing.T) {
 	}
 }
 
-func TestMainAgentToolsIncludesTypingWhenConfigured(t *testing.T) {
-	got := MainAgentTools(mainDepsWithTyping())
-	if len(got) != 15 {
-		t.Fatalf("want 15 tools, got %d", len(got))
-	}
-	seen := make(map[string]struct{}, len(got))
-	for _, g := range got {
-		if g.Name() == "" {
-			t.Fatalf("tool name is empty")
-		}
-		name := g.Name()
-		seen[name] = struct{}{}
-	}
-	if len(seen) != 15 {
-		t.Fatalf("tool names are not unique: got %d", len(seen))
-	}
-	if _, ok := seen["typing"]; !ok {
-		t.Fatal("typing tool missing")
-	}
-}
-
 func TestToProviderDefsProducesValidJSON(t *testing.T) {
 	defs := ToProviderDefs(MainAgentTools(mainDeps()))
 	if len(defs) != 14 {
@@ -76,20 +47,6 @@ func TestToProviderDefsProducesValidJSON(t *testing.T) {
 		if err := json.Unmarshal(def.Parameters, &body); err != nil {
 			t.Fatalf("tool %q parameters are not valid JSON object: %v", def.Name, err)
 		}
-	}
-}
-
-func TestToProviderDefsIncludesTyping(t *testing.T) {
-	defs := ToProviderDefs(MainAgentTools(mainDepsWithTyping()))
-	if len(defs) != 15 {
-		t.Fatalf("want 15 defs, got %d", len(defs))
-	}
-	names := make(map[string]struct{}, len(defs))
-	for _, d := range defs {
-		names[d.Name] = struct{}{}
-	}
-	if _, ok := names["typing"]; !ok {
-		t.Fatal("typing tool def missing")
 	}
 }
 

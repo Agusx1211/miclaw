@@ -233,21 +233,8 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		if signalClient == nil {
 			return fmt.Errorf("signal is disabled")
 		}
+		typing.Clear(to)
 		return sendSignalMessage(ctx, signalClient, cfg.Signal, to, content)
-	}
-	var startTyping func(context.Context, string, time.Duration) error
-	var stopTyping func(context.Context, string) error
-	if signalClient != nil {
-		startTyping = func(_ context.Context, to string, duration time.Duration) error {
-			return typing.Start(to, duration, func(callCtx context.Context, target string) error {
-				return sendSignalTyping(callCtx, signalClient, target)
-			})
-		}
-		stopTyping = func(_ context.Context, to string) error {
-			return typing.Stop(to, func(callCtx context.Context, target string) error {
-				return sendSignalTypingStop(callCtx, signalClient, target)
-			})
-		}
 	}
 	var ag *agent.Agent
 	toolList := tools.MainAgentTools(tools.MainToolDeps{
@@ -256,8 +243,6 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		Embed:       embedClient,
 		Scheduler:   scheduler,
 		SendMessage: sendMessage,
-		StartTyping: startTyping,
-		StopTyping:  stopTyping,
 	})
 	if bridge != nil {
 		toolList = wrapToolsWithSandboxBridge(toolList, bridge)
@@ -709,7 +694,7 @@ func (s *typingState) StartAuto(send func(context.Context, string) error) error 
 	if to == "" || !pending {
 		return nil
 	}
-	return s.Start(to, 0, send)
+	return s.Start(to, 30*time.Second, send)
 }
 
 func isHeartbeatPrompt(content string) bool {

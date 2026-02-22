@@ -2,7 +2,6 @@ package tools
 
 import (
 	"context"
-	"time"
 
 	"github.com/agusx1211/miclaw/config"
 	"github.com/agusx1211/miclaw/memory"
@@ -14,8 +13,6 @@ type MainToolDeps struct {
 	Embed       *memory.EmbedClient
 	Scheduler   *Scheduler
 	SendMessage func(ctx context.Context, to, content string) error
-	StartTyping func(ctx context.Context, to string, duration time.Duration) error
-	StopTyping  func(ctx context.Context, to string) error
 }
 
 func MainAgentTools(deps MainToolDeps) []Tool {
@@ -34,9 +31,6 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		sleepTool(),
 		MemorySearchTool(deps.Memory, deps.Embed),
 		MemoryGetTool(deps.Memory),
-	}
-	if deps.StartTyping != nil && deps.StopTyping != nil {
-		tools = append(tools, typingTool(deps.StartTyping, deps.StopTyping))
 	}
 
 	return tools
