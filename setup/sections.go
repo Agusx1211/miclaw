@@ -12,8 +12,13 @@ func configurePaths(u *ui, cfg *config.Config) error {
 	if err != nil {
 		return err
 	}
+	noToolSleepRounds, err := u.askInt("No-tool auto-sleep rounds", maxInt(cfg.NoToolSleepRounds, 16), 1)
+	if err != nil {
+		return err
+	}
 	cfg.Workspace = workspace
 	cfg.StatePath = statePath
+	cfg.NoToolSleepRounds = noToolSleepRounds
 	return nil
 }
 

@@ -230,14 +230,14 @@ func TestBuildSystemPromptSectionOrdering(t *testing.T) {
 	}
 }
 
-func TestBuildSystemPromptMessagingExplainsTextEndsRun(t *testing.T) {
+func TestBuildSystemPromptMessagingMentionsSleepTool(t *testing.T) {
 	t.Parallel()
 	got := BuildSystemPrompt(SystemPromptParams{
 		Mode:      "full",
 		Workspace: &Workspace{Soul: "s", Identity: "i", Agents: "a"},
 	})
 
-	want := "If you emit plain assistant text (without tool calls), the runtime treats that as done and goes to sleep."
+	want := "When all work is complete, call the sleep tool to let the runtime sleep until new input arrives."
 	if !strings.Contains(got, want) {
 		t.Fatalf("expected messaging guidance %q in prompt:\n%s", want, got)
 	}

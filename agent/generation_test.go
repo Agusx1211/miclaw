@@ -89,6 +89,32 @@ func (t *echoTool) Calls() []model.ToolCallPart {
 	return append([]model.ToolCallPart(nil), t.calls...)
 }
 
+type sleepTool struct {
+	mu    sync.Mutex
+	calls []model.ToolCallPart
+}
+
+func (t *sleepTool) Name() string { return "sleep" }
+
+func (t *sleepTool) Description() string { return "sleep tool" }
+
+func (t *sleepTool) Parameters() tooling.JSONSchema {
+	return tooling.JSONSchema{Type: "object"}
+}
+
+func (t *sleepTool) Run(_ context.Context, call model.ToolCallPart) (tooling.ToolResult, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.calls = append(t.calls, call)
+	return tooling.ToolResult{Content: "sleeping", IsError: false}, nil
+}
+
+func (t *sleepTool) Calls() []model.ToolCallPart {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return append([]model.ToolCallPart(nil), t.calls...)
+}
+
 type cancellationTool struct {
 	started chan struct{}
 }
@@ -157,29 +183,49 @@ func historyContains(messages []model.Message, target string) bool {
 
 func TestRunStoresPrefixedInputAndAssistantReply(t *testing.T) {
 	s := openAgentStore(t)
+	st := &sleepTool{}
 	p := &scriptedProvider{
-		streams: []streamScript{eventStream(
-			provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "hel"},
-			provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "lo"},
-			provider.ProviderEvent{Type: provider.EventComplete, Usage: &provider.UsageInfo{PromptTokens: 11, CompletionTokens: 7}},
-		)},
+		streams: []streamScript{
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "hel"},
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "lo"},
+				provider.ProviderEvent{Type: provider.EventComplete, Usage: &provider.UsageInfo{PromptTokens: 11, CompletionTokens: 7}},
+			),
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventToolUseStart, ToolCallID: "call-sleep", ToolName: "sleep"},
+				provider.ProviderEvent{Type: provider.EventToolUseStop, ToolCallID: "call-sleep"},
+				provider.ProviderEvent{Type: provider.EventComplete},
+			),
+		},
 	}
-	a := NewAgent(s.MessageStore(), nil, p)
+	a := NewAgent(s.MessageStore(), []tooling.Tool{st}, p)
 
 	err := a.RunOnce(context.Background(), Input{Source: "signal:dm:user-1", Content: "hi"})
 	if err != nil {
 		t.Fatalf("run once: %v", err)
 	}
+	if p.CallCount() != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", p.CallCount())
+	}
 
 	msgs := listMessages(t, s)
-	if len(msgs) != 2 {
-		t.Fatalf("expected 2 stored messages, got %d", len(msgs))
+	if len(msgs) != 4 {
+		t.Fatalf("expected 4 stored messages, got %d", len(msgs))
 	}
 	if msgs[0].Role != model.RoleUser || textPart(msgs[0]) != "[signal:dm:user-1] hi" {
 		t.Fatalf("unexpected first message: %#v", msgs[0])
 	}
 	if msgs[1].Role != model.RoleAssistant || textPart(msgs[1]) != "hello" {
 		t.Fatalf("unexpected assistant message: %#v", msgs[1])
+	}
+	if msgs[2].Role != model.RoleAssistant {
+		t.Fatalf("unexpected assistant message: %#v", msgs[2])
+	}
+	if msgs[3].Role != model.RoleTool {
+		t.Fatalf("unexpected tool message: %#v", msgs[3])
+	}
+	if len(st.Calls()) != 1 {
+		t.Fatalf("expected 1 sleep tool call, got %d", len(st.Calls()))
 	}
 }
 
@@ -195,6 +241,8 @@ func TestRunInjectsNewInputBetweenToolRounds(t *testing.T) {
 			),
 			eventStream(
 				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "done"},
+				provider.ProviderEvent{Type: provider.EventToolUseStart, ToolCallID: "call2", ToolName: "sleep"},
+				provider.ProviderEvent{Type: provider.EventToolUseStop, ToolCallID: "call2"},
 				provider.ProviderEvent{Type: provider.EventComplete},
 			),
 		},
@@ -203,7 +251,8 @@ func TestRunInjectsNewInputBetweenToolRounds(t *testing.T) {
 	tool := &echoTool{runFn: func(context.Context) {
 		a.Inject(Input{Source: "signal:dm:alice", Content: "stop"})
 	}}
-	a = NewAgent(s.MessageStore(), []tooling.Tool{tool}, p)
+	st := &sleepTool{}
+	a = NewAgent(s.MessageStore(), []tooling.Tool{tool, st}, p)
 
 	err := a.RunOnce(context.Background(), Input{Source: "api", Content: "use tool"})
 	if err != nil {
@@ -220,8 +269,8 @@ func TestRunInjectsNewInputBetweenToolRounds(t *testing.T) {
 	}
 
 	msgs := listMessages(t, s)
-	if len(msgs) != 5 {
-		t.Fatalf("expected 5 stored messages, got %d", len(msgs))
+	if len(msgs) != 6 {
+		t.Fatalf("expected 6 stored messages, got %d", len(msgs))
 	}
 	if msgs[1].Role != model.RoleAssistant {
 		t.Fatalf("expected assistant tool-call message at index 1, got role %q", msgs[1].Role)
@@ -231,6 +280,49 @@ func TestRunInjectsNewInputBetweenToolRounds(t *testing.T) {
 	}
 	if msgs[3].Role != model.RoleUser || textPart(msgs[3]) != "[signal:dm:alice] stop" {
 		t.Fatalf("expected injected user message at index 3, got %#v", msgs[3])
+	}
+	if msgs[5].Role != model.RoleTool {
+		t.Fatalf("expected tool result message at index 5, got role %q", msgs[5].Role)
+	}
+	if len(st.Calls()) != 1 {
+		t.Fatalf("expected 1 sleep tool call, got %d", len(st.Calls()))
+	}
+}
+
+func TestRunAutoSleepsAfterNoToolRoundLimit(t *testing.T) {
+	s := openAgentStore(t)
+	p := &scriptedProvider{
+		streams: []streamScript{
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "one"},
+				provider.ProviderEvent{Type: provider.EventComplete},
+			),
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "two"},
+				provider.ProviderEvent{Type: provider.EventComplete},
+			),
+			eventStream(
+				provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "three"},
+				provider.ProviderEvent{Type: provider.EventComplete},
+			),
+		},
+	}
+	a := NewAgent(s.MessageStore(), nil, p)
+	a.SetNoToolSleepRounds(2)
+
+	err := a.RunOnce(context.Background(), Input{Source: "api", Content: "loop"})
+	if err != nil {
+		t.Fatalf("run once: %v", err)
+	}
+	if p.CallCount() != 2 {
+		t.Fatalf("expected 2 provider calls, got %d", p.CallCount())
+	}
+	msgs := listMessages(t, s)
+	if len(msgs) != 3 {
+		t.Fatalf("expected 3 stored messages, got %d", len(msgs))
+	}
+	if textPart(msgs[1]) != "one" || textPart(msgs[2]) != "two" {
+		t.Fatalf("unexpected assistant messages: %#v", msgs)
 	}
 }
 

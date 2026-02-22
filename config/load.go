@@ -9,25 +9,26 @@ import (
 )
 
 const (
-	defaultWorkspace      = "~/.miclaw/workspace"
-	defaultStatePath      = "~/.miclaw/state"
-	defaultLMStudioURL    = "http://127.0.0.1:1234/v1"
-	defaultOpenRouterURL  = "https://openrouter.ai/api/v1"
-	defaultCodexURL       = "https://api.openai.com/v1"
-	defaultMaxTokens      = 8192
-	defaultSignalHTTPHost = "127.0.0.1"
-	defaultSignalHTTPPort = 8080
-	defaultSignalCLIPath  = "signal-cli"
-	defaultDMPolicy       = "open"
-	defaultGroupPolicy    = "disabled"
-	defaultTextChunkLimit = 4000
-	defaultMediaMaxMB     = 8
-	defaultWebhookListen  = "127.0.0.1:9090"
-	defaultSandboxNetwork = "none"
-	defaultHostUser       = "pipo-runner"
-	defaultMinScore       = 0.35
-	defaultResults        = 6
-	defaultCitations      = "auto"
+	defaultWorkspace         = "~/.miclaw/workspace"
+	defaultStatePath         = "~/.miclaw/state"
+	defaultNoToolSleepRounds = 16
+	defaultLMStudioURL       = "http://127.0.0.1:1234/v1"
+	defaultOpenRouterURL     = "https://openrouter.ai/api/v1"
+	defaultCodexURL          = "https://api.openai.com/v1"
+	defaultMaxTokens         = 8192
+	defaultSignalHTTPHost    = "127.0.0.1"
+	defaultSignalHTTPPort    = 8080
+	defaultSignalCLIPath     = "signal-cli"
+	defaultDMPolicy          = "open"
+	defaultGroupPolicy       = "disabled"
+	defaultTextChunkLimit    = 4000
+	defaultMediaMaxMB        = 8
+	defaultWebhookListen     = "127.0.0.1:9090"
+	defaultSandboxNetwork    = "none"
+	defaultHostUser          = "pipo-runner"
+	defaultMinScore          = 0.35
+	defaultResults           = 6
+	defaultCitations         = "auto"
 )
 
 func Load(path string) (*Config, error) {
@@ -70,6 +71,9 @@ func applyCoreDefaults(c *Config) {
 	}
 	if c.StatePath == "" {
 		c.StatePath = defaultStatePath
+	}
+	if c.NoToolSleepRounds == 0 {
+		c.NoToolSleepRounds = defaultNoToolSleepRounds
 	}
 
 }
@@ -217,6 +221,9 @@ func validate(c Config) error {
 	}
 	if err := validateMemory(c.Memory); err != nil {
 		return err
+	}
+	if c.NoToolSleepRounds <= 0 {
+		return fmt.Errorf("no_tool_sleep_rounds must be greater than zero")
 	}
 
 	return nil

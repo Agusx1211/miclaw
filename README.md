@@ -42,6 +42,7 @@ The setup TUI supports:
 - Provider selection (`lmstudio`, `openrouter`, `codex`)
 - Auto-loading provider models with searchable selection
 - OpenAI Codex OAuth flow (open auth URL, paste full redirect URL)
+- Runtime safety settings (for example no-tool auto-sleep threshold)
 - Signal setup and policy configuration
 - Docker sandbox setup (network, mounts, host command proxy allowlist)
 - Memory and webhook configuration
@@ -237,6 +238,7 @@ Tool calls are routed into the sandbox for filesystem/exec tools (`read`, `write
   "webhook": { "enabled": false, "listen": "127.0.0.1:9090", "hooks": [] },
   "memory": { "enabled": false, "embedding_url": "", "..." : "..." },
   "sandbox": { "enabled": false, "network": "none", "mounts": [] },
+  "no_tool_sleep_rounds": 16,
   "workspace": "~/.miclaw/workspace",
   "state_path": "~/.miclaw/state"
 }

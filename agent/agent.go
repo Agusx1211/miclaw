@@ -13,23 +13,26 @@ import (
 )
 
 type Agent struct {
-	messages    store.MessageStore
-	tools       []tooling.Tool
-	provider    provider.LLMProvider
-	active      atomic.Bool
-	cancel      context.CancelFunc
-	eventBroker *Broker[AgentEvent]
-	pending     *InputQueue
-	workspace   *prompt.Workspace
-	skills      []prompt.SkillSummary
-	memory      string
-	heartbeat   string
-	runtimeInfo string
-	promptMode  string
-	trace       func(format string, args ...any)
+	messages          store.MessageStore
+	tools             []tooling.Tool
+	provider          provider.LLMProvider
+	noToolSleepRounds int
+	active            atomic.Bool
+	cancel            context.CancelFunc
+	eventBroker       *Broker[AgentEvent]
+	pending           *InputQueue
+	workspace         *prompt.Workspace
+	skills            []prompt.SkillSummary
+	memory            string
+	heartbeat         string
+	runtimeInfo       string
+	promptMode        string
+	trace             func(format string, args ...any)
 
 	mu sync.Mutex
 }
+
+const defaultNoToolSleepRounds = 16
 
 func NewAgent(
 	messages store.MessageStore,
@@ -38,15 +41,16 @@ func NewAgent(
 ) *Agent {
 
 	a := &Agent{
-		messages:    messages,
-		tools:       append([]tooling.Tool(nil), toolList...),
-		provider:    prov,
-		eventBroker: NewBroker[AgentEvent](),
-		pending:     &InputQueue{},
-		workspace:   &prompt.Workspace{},
-		skills:      []prompt.SkillSummary{},
-		promptMode:  "full",
-		trace:       func(string, ...any) {},
+		messages:          messages,
+		tools:             append([]tooling.Tool(nil), toolList...),
+		provider:          prov,
+		noToolSleepRounds: defaultNoToolSleepRounds,
+		eventBroker:       NewBroker[AgentEvent](),
+		pending:           &InputQueue{},
+		workspace:         &prompt.Workspace{},
+		skills:            []prompt.SkillSummary{},
+		promptMode:        "full",
+		trace:             func(string, ...any) {},
 	}
 
 	return a
@@ -80,6 +84,11 @@ func (a *Agent) SetSkills(skills []prompt.SkillSummary) {
 func (a *Agent) SetTrace(trace func(format string, args ...any)) {
 
 	a.trace = trace
+}
+
+func (a *Agent) SetNoToolSleepRounds(rounds int) {
+
+	a.noToolSleepRounds = rounds
 }
 
 func (a *Agent) Inject(input Input) {

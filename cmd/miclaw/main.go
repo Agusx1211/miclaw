@@ -263,6 +263,7 @@ func initRuntime(configPath string) (*runtimeDeps, error) {
 		toolList = wrapToolsWithSandboxBridge(toolList, bridge)
 	}
 	ag = agent.NewAgent(sqlStore.Messages, toolList, prov)
+	ag.SetNoToolSleepRounds(cfg.NoToolSleepRounds)
 	ag.SetWorkspace(workspace)
 	ag.SetSkills(skills)
 	ag.SetTrace(func(format string, args ...any) {

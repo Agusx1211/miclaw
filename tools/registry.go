@@ -31,6 +31,7 @@ func MainAgentTools(deps MainToolDeps) []Tool {
 		processTool(),
 		CronTool(deps.Scheduler),
 		messageTool(deps.SendMessage),
+		sleepTool(),
 		MemorySearchTool(deps.Memory, deps.Embed),
 		MemoryGetTool(deps.Memory),
 	}

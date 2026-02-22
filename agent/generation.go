@@ -24,33 +24,38 @@ type toolCallState struct {
 }
 
 func (a *Agent) run(ctx context.Context) error {
+	pending := a.pending.Drain()
+	if len(pending) == 0 {
+		return nil
+	}
+	a.tracef("pending=%d", len(pending))
+	if err := a.injectInputs(pending); err != nil {
+		return err
+	}
+	noToolRounds := 0
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		pending := a.pending.Drain()
-		if len(pending) == 0 {
-			return nil
-		}
-		a.tracef("pending=%d", len(pending))
-		if err := a.injectInputs(pending); err != nil {
+		shouldSleep, hadToolCalls, err := a.streamAndHandle(ctx, a.tools)
+		if err != nil {
 			return err
 		}
-		for {
-			if err := ctx.Err(); err != nil {
+		if shouldSleep {
+			return nil
+		}
+		if hadToolCalls {
+			noToolRounds = 0
+		} else {
+			noToolRounds++
+			if noToolRounds >= a.noToolSleepRounds {
+				a.tracef("auto_sleep no_tool_rounds=%d", noToolRounds)
+				return nil
+			}
+		}
+		if more := a.pending.Drain(); len(more) > 0 {
+			if err := a.injectInputs(more); err != nil {
 				return err
-			}
-			hasToolCalls, err := a.streamAndHandle(ctx, a.tools)
-			if err != nil {
-				return err
-			}
-			if !hasToolCalls {
-				break
-			}
-			if more := a.pending.Drain(); len(more) > 0 {
-				if err := a.injectInputs(more); err != nil {
-					return err
-				}
 			}
 		}
 	}
@@ -96,16 +101,16 @@ func newUserMessage(content string) *Message {
 	return msg
 }
 
-func (a *Agent) streamAndHandle(ctx context.Context, toolList []tooling.Tool) (bool, error) {
+func (a *Agent) streamAndHandle(ctx context.Context, toolList []tooling.Tool) (bool, bool, error) {
 	msgs, err := a.messages.List(threadMessageLimit, 0)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	assistant := &Message{ID: uuid.NewString(), Role: RoleAssistant, CreatedAt: time.Now().UTC()}
 	history := a.buildHistory(msgs)
 	text, reasoning, calls, _, err := a.collectStream(ctx, history, toProviderDefs(toolList))
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
 	if reasoning != "" {
 		a.tracef("think=%q", compactTraceText(reasoning))
@@ -118,23 +123,24 @@ func (a *Agent) streamAndHandle(ctx context.Context, toolList []tooling.Tool) (b
 	}
 	assistant.Parts = buildAssistantParts(text, reasoning, calls)
 	if err := a.messages.Create(assistant); err != nil {
-		return false, err
+		return false, false, err
 	}
 	if len(calls) == 0 {
-		return false, nil
+		return false, false, nil
 	}
+	shouldSleep := hasToolCall(calls, "sleep")
 
 	toolMsg, err := runTools(ctx, toolList, calls)
 	if toolMsg != nil {
 		if err := a.messages.Create(toolMsg); err != nil {
-			return false, err
+			return false, true, err
 		}
 		traceToolResults(a, calls, toolMsg)
 	}
 	if err != nil {
-		return false, err
+		return false, true, err
 	}
-	return true, nil
+	return shouldSleep, true, nil
 }
 
 func (a *Agent) collectStream(ctx context.Context, history []model.Message, defs []provider.ToolDef) (string, string, []ToolCallPart, *provider.UsageInfo, error) {
@@ -318,6 +324,16 @@ func findToolCallName(calls []ToolCallPart, id string) string {
 		}
 	}
 	return "unknown"
+}
+
+func hasToolCall(calls []ToolCallPart, name string) bool {
+
+	for _, call := range calls {
+		if call.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func compactTraceText(raw string) string {

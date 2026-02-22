@@ -21,26 +21,8 @@ func mainDepsWithTyping() MainToolDeps {
 	return deps
 }
 
-func TestMainAgentToolsReturns13UniqueTools(t *testing.T) {
+func TestMainAgentToolsReturns14UniqueTools(t *testing.T) {
 	got := MainAgentTools(mainDeps())
-	if len(got) != 13 {
-		t.Fatalf("want 13 tools, got %d", len(got))
-	}
-	seen := make(map[string]struct{}, len(got))
-	for _, g := range got {
-		if g.Name() == "" {
-			t.Fatalf("tool name is empty")
-		}
-		name := g.Name()
-		seen[name] = struct{}{}
-	}
-	if len(seen) != 13 {
-		t.Fatalf("tool names are not unique: got %d", len(seen))
-	}
-}
-
-func TestMainAgentToolsIncludesTypingWhenConfigured(t *testing.T) {
-	got := MainAgentTools(mainDepsWithTyping())
 	if len(got) != 14 {
 		t.Fatalf("want 14 tools, got %d", len(got))
 	}
@@ -55,6 +37,27 @@ func TestMainAgentToolsIncludesTypingWhenConfigured(t *testing.T) {
 	if len(seen) != 14 {
 		t.Fatalf("tool names are not unique: got %d", len(seen))
 	}
+	if _, ok := seen["sleep"]; !ok {
+		t.Fatal("sleep tool missing")
+	}
+}
+
+func TestMainAgentToolsIncludesTypingWhenConfigured(t *testing.T) {
+	got := MainAgentTools(mainDepsWithTyping())
+	if len(got) != 15 {
+		t.Fatalf("want 15 tools, got %d", len(got))
+	}
+	seen := make(map[string]struct{}, len(got))
+	for _, g := range got {
+		if g.Name() == "" {
+			t.Fatalf("tool name is empty")
+		}
+		name := g.Name()
+		seen[name] = struct{}{}
+	}
+	if len(seen) != 15 {
+		t.Fatalf("tool names are not unique: got %d", len(seen))
+	}
 	if _, ok := seen["typing"]; !ok {
 		t.Fatal("typing tool missing")
 	}
@@ -62,8 +65,8 @@ func TestMainAgentToolsIncludesTypingWhenConfigured(t *testing.T) {
 
 func TestToProviderDefsProducesValidJSON(t *testing.T) {
 	defs := ToProviderDefs(MainAgentTools(mainDeps()))
-	if len(defs) != 13 {
-		t.Fatalf("want 13 defs, got %d", len(defs))
+	if len(defs) != 14 {
+		t.Fatalf("want 14 defs, got %d", len(defs))
 	}
 	for _, def := range defs {
 		if !json.Valid(def.Parameters) {
@@ -78,8 +81,8 @@ func TestToProviderDefsProducesValidJSON(t *testing.T) {
 
 func TestToProviderDefsIncludesTyping(t *testing.T) {
 	defs := ToProviderDefs(MainAgentTools(mainDepsWithTyping()))
-	if len(defs) != 14 {
-		t.Fatalf("want 14 defs, got %d", len(defs))
+	if len(defs) != 15 {
+		t.Fatalf("want 15 defs, got %d", len(defs))
 	}
 	names := make(map[string]struct{}, len(defs))
 	for _, d := range defs {

@@ -153,7 +153,7 @@ func TestStartSchedulerInjectsCronMessage(t *testing.T) {
 	}
 	now.Store(base.Add(time.Minute).UnixNano())
 
-	waitMessageCount(t, sqlStore.MessageStore(), 2, 2*time.Second)
+	waitMessageCount(t, sqlStore.MessageStore(), 3, 2*time.Second)
 	msgs, err := sqlStore.MessageStore().List(10, 0)
 	if err != nil {
 		t.Fatalf("list messages: %v", err)
@@ -681,8 +681,10 @@ func TestIsHeartbeatPrompt(t *testing.T) {
 type cronStubProvider struct{}
 
 func (cronStubProvider) Stream(context.Context, []model.Message, []provider.ToolDef) <-chan provider.ProviderEvent {
-	ch := make(chan provider.ProviderEvent, 2)
+	ch := make(chan provider.ProviderEvent, 4)
 	ch <- provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "ok"}
+	ch <- provider.ProviderEvent{Type: provider.EventToolUseStart, ToolCallID: "sleep-1", ToolName: "sleep"}
+	ch <- provider.ProviderEvent{Type: provider.EventToolUseStop, ToolCallID: "sleep-1"}
 	ch <- provider.ProviderEvent{Type: provider.EventComplete}
 	close(ch)
 	return ch

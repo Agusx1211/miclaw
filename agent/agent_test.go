@@ -82,8 +82,10 @@ func (s *memMessageStore) ReplaceAll(msgs []*model.Message) error {
 type idleProvider struct{}
 
 func (idleProvider) Stream(context.Context, []model.Message, []provider.ToolDef) <-chan provider.ProviderEvent {
-	ch := make(chan provider.ProviderEvent, 2)
+	ch := make(chan provider.ProviderEvent, 4)
 	ch <- provider.ProviderEvent{Type: provider.EventContentDelta, Delta: "ok"}
+	ch <- provider.ProviderEvent{Type: provider.EventToolUseStart, ToolCallID: "sleep-1", ToolName: "sleep"}
+	ch <- provider.ProviderEvent{Type: provider.EventToolUseStop, ToolCallID: "sleep-1"}
 	ch <- provider.ProviderEvent{Type: provider.EventComplete}
 	close(ch)
 	return ch
@@ -124,12 +126,24 @@ func (stubTool) Run(context.Context, model.ToolCallPart) (tooling.ToolResult, er
 	return tooling.ToolResult{Content: "ok", IsError: false}, nil
 }
 
+type sleepStubTool struct{}
+
+func (sleepStubTool) Name() string { return "sleep" }
+
+func (sleepStubTool) Description() string { return "sleep tool" }
+
+func (sleepStubTool) Parameters() tooling.JSONSchema { return tooling.JSONSchema{Type: "object"} }
+
+func (sleepStubTool) Run(context.Context, model.ToolCallPart) (tooling.ToolResult, error) {
+	return tooling.ToolResult{Content: "sleeping", IsError: false}, nil
+}
+
 func newTestAgent(t *testing.T) (*Agent, *memMessageStore) {
 	t.Helper()
 	store := &memMessageStore{}
 	a := NewAgent(
 		store,
-		[]tooling.Tool{stubTool{}},
+		[]tooling.Tool{stubTool{}, sleepStubTool{}},
 		idleProvider{},
 	)
 	if a == nil {
@@ -206,7 +220,7 @@ func TestAgentInjectProcessesQueuedInputs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
-	if n != 3 {
-		t.Fatalf("expected 3 messages (2 user + 1 assistant), got %d", n)
+	if n != 4 {
+		t.Fatalf("expected 4 messages (2 user + 1 assistant + 1 tool), got %d", n)
 	}
 }

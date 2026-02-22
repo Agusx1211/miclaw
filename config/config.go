@@ -2,13 +2,14 @@ package config
 
 // Config is the complete runtime configuration loaded from one JSON file.
 type Config struct {
-	Provider  ProviderConfig `json:"provider"`
-	Signal    SignalConfig   `json:"signal"`
-	Webhook   WebhookConfig  `json:"webhook"`
-	Sandbox   SandboxConfig  `json:"sandbox"`
-	Memory    MemoryConfig   `json:"memory"`
-	Workspace string         `json:"workspace"`
-	StatePath string         `json:"state_path"`
+	Provider          ProviderConfig `json:"provider"`
+	Signal            SignalConfig   `json:"signal"`
+	Webhook           WebhookConfig  `json:"webhook"`
+	Sandbox           SandboxConfig  `json:"sandbox"`
+	Memory            MemoryConfig   `json:"memory"`
+	Workspace         string         `json:"workspace"`
+	StatePath         string         `json:"state_path"`
+	NoToolSleepRounds int            `json:"no_tool_sleep_rounds"`
 }
 
 type ProviderConfig struct {

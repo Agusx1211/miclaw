@@ -152,6 +152,9 @@ func TestLoadAppliesDefaults(t *testing.T) {
 	if c.Memory.MinScore != defaultMinScore || c.Memory.DefaultResults != defaultResults || c.Memory.Citations != defaultCitations {
 		t.Fatalf("unexpected memory defaults: %v %d %q", c.Memory.MinScore, c.Memory.DefaultResults, c.Memory.Citations)
 	}
+	if c.NoToolSleepRounds != defaultNoToolSleepRounds {
+		t.Fatalf("unexpected no_tool_sleep_rounds default: %d", c.NoToolSleepRounds)
+	}
 }
 
 func TestLoadRejectsInvalidBackend(t *testing.T) {
@@ -233,6 +236,24 @@ func TestLoadRejectsMissingRequiredFieldsWhenEnabled(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "memory.embedding_model") {
 		t.Fatalf("expected embedding_model error, got: %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidNoToolSleepRounds(t *testing.T) {
+	p := writeConfigFile(t, `{
+		"provider": {
+			"backend": "lmstudio",
+			"model": "m"
+		},
+		"no_tool_sleep_rounds": -1
+	}`)
+
+	_, err := Load(p)
+	if err == nil {
+		t.Fatal("expected no_tool_sleep_rounds validation error")
+	}
+	if !strings.Contains(err.Error(), "no_tool_sleep_rounds") {
+		t.Fatalf("expected no_tool_sleep_rounds error, got: %v", err)
 	}
 }
 
