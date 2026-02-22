@@ -31,6 +31,7 @@ type execParams struct {
 	Command    string
 	Timeout    int
 	WorkingDir string
+	Input      string
 	Background bool
 }
 
@@ -57,6 +58,10 @@ func execToolWithSandbox(_ config.SandboxConfig) Tool {
 				"working_dir": {
 					Type: "string",
 					Desc: "Directory to execute the command in",
+				},
+				"input": {
+					Type: "string",
+					Desc: "Data piped to stdin",
 				},
 				"background": {
 					Type: "boolean",
@@ -88,6 +93,9 @@ func runExecBackground(params execParams) ToolResult {
 
 func runExecLocal(ctx context.Context, params execParams) ToolResult {
 	cmd := localExecCommand(params)
+	if params.Input != "" {
+		cmd.Stdin = strings.NewReader(params.Input)
+	}
 	exitCode, output, status := runForegroundCommand(ctx, cmd, params.Timeout)
 	return asExecResult(exitCode, status, output)
 }
@@ -114,6 +122,7 @@ func parseExecParams(raw json.RawMessage) (execParams, error) {
 		Command    *string `json:"command"`
 		Timeout    *int    `json:"timeout"`
 		WorkingDir *string `json:"working_dir"`
+		Input      *string `json:"input"`
 		Background *bool   `json:"background"`
 	}
 	if err := json.Unmarshal(raw, &input); err != nil {
@@ -136,6 +145,9 @@ func parseExecParams(raw json.RawMessage) (execParams, error) {
 	if input.WorkingDir != nil {
 		params.WorkingDir = *input.WorkingDir
 	}
+	if input.Input != nil {
+		params.Input = *input.Input
+	}
 	if input.Background != nil {
 		params.Background = *input.Background
 	}
@@ -148,6 +160,9 @@ func runForegroundCommand(ctx context.Context, cmd *exec.Cmd, timeout int) (int,
 	outputMu := sync.Mutex{}
 	cmd.Stdout = &outputWriter{buf: output, mu: &outputMu}
 	cmd.Stderr = cmd.Stdout
+	if cmd.Stdin == nil {
+		cmd.Stdin = bytes.NewReader(nil)
+	}
 	if err := cmd.Start(); err != nil {
 		return -1, "", fmt.Sprintf("failed to start command: %v", err)
 	}

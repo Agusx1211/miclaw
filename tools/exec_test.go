@@ -101,6 +101,25 @@ func TestExecWorkingDir(t *testing.T) {
 	}
 }
 
+func TestExecInput(t *testing.T) {
+	got, err := runExecCall(t, context.Background(), map[string]any{
+		"command": "cat",
+		"input":   "poem line 1\npoem line 2\n",
+	})
+	if err != nil {
+		t.Fatalf("tool call: %v", err)
+	}
+	if got.IsError {
+		t.Fatalf("unexpected tool error: %s", got.Content)
+	}
+	if exitCode := execResultExitCode(t, got.Content); exitCode != 0 {
+		t.Fatalf("want exit code 0, got %d", exitCode)
+	}
+	if out := execResultOutput(got.Content); !strings.Contains(out, "poem line 2") {
+		t.Fatalf("missing stdin output: %q", out)
+	}
+}
+
 func TestExecBackground(t *testing.T) {
 	got, err := runExecCall(t, context.Background(), map[string]any{
 		"command":    "echo bg-output; sleep 0.5; echo bg-done",

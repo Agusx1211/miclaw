@@ -45,6 +45,7 @@ type hostExecRequest struct {
 	Command     string   `json:"command"`
 	Args        []string `json:"args,omitempty"`
 	WorkingDir  string   `json:"working_dir,omitempty"`
+	Input       string   `json:"input,omitempty"`
 	TimeoutSec  int      `json:"timeout_sec,omitempty"`
 	ContainerID string   `json:"container_id,omitempty"`
 }
@@ -264,6 +265,9 @@ func runHostCommand(ctx context.Context, req hostExecRequest, hostDir string) (h
 	defer cancel()
 	command := exec.CommandContext(ctx, req.Command, req.Args...)
 	command.Dir = hostDir
+	if req.Input != "" {
+		command.Stdin = strings.NewReader(req.Input)
+	}
 	command.Env = hostCommandEnv()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -299,6 +303,10 @@ func hostCommandEnv() []string {
 }
 
 func runHostExecClient(args []string, stdout, stderr io.Writer) error {
+	return runHostExecClientWithInput(args, os.Stdin, stdinIsTTY(), stdout, stderr)
+}
+
+func runHostExecClientWithInput(args []string, stdin io.Reader, stdinTTY bool, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
 		return fmt.Errorf("host exec client requires command")
 	}
@@ -306,6 +314,13 @@ func runHostExecClient(args []string, stdout, stderr io.Writer) error {
 		Command:    args[0],
 		Args:       args[1:],
 		TimeoutSec: hostExecTimeout(),
+	}
+	if !stdinTTY {
+		raw, err := io.ReadAll(stdin)
+		if err != nil {
+			return fmt.Errorf("read stdin: %v", err)
+		}
+		req.Input = string(raw)
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		req.WorkingDir = cwd

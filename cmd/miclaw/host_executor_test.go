@@ -103,6 +103,50 @@ func TestHostCommandServerRunsAllowlistedCommandInMappedDir(t *testing.T) {
 	}
 }
 
+func TestHostCommandServerForwardsInputToCommand(t *testing.T) {
+	root := t.TempDir()
+	sock := filepath.Join(root, "host-executor.sock")
+	srv, err := startHostCommandServer(hostCommandServerConfig{
+		SocketPath: sock,
+		Workspace:  root,
+		Allowed:    []string{"cat"},
+		Mounts: []config.Mount{
+			{Host: root, Container: "/workspace", Mode: "rw"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("start host command server: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := srv.Close(); err != nil {
+			t.Fatalf("close host command server: %v", err)
+		}
+	})
+
+	status, body, err := hostExecHTTPCall(sock, hostExecRequest{
+		Command:    "cat",
+		WorkingDir: "/workspace",
+		TimeoutSec: 5,
+		Input:      "violet bytes\nsilver bytes\n",
+	})
+	if err != nil {
+		t.Fatalf("proxy call failed: %v", err)
+	}
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, body=%q", status, body)
+	}
+	var resp hostExecResponse
+	if err := json.Unmarshal([]byte(body), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.ExitCode != 0 {
+		t.Fatalf("exit code = %d, stderr=%q", resp.ExitCode, resp.Stderr)
+	}
+	if resp.Stdout != "violet bytes\nsilver bytes\n" {
+		t.Fatalf("stdout = %q", resp.Stdout)
+	}
+}
+
 func TestRunHostExecClientStreamsAndReturnsExitCode(t *testing.T) {
 	root := t.TempDir()
 	sock := filepath.Join(root, "host-executor.sock")
@@ -126,6 +170,9 @@ func TestRunHostExecClientStreamsAndReturnsExitCode(t *testing.T) {
 		if len(req.Args) != 1 || req.Args[0] != "status" {
 			t.Fatalf("args = %#v", req.Args)
 		}
+		if req.Input != "morning drizzle\n" {
+			t.Fatalf("input = %q", req.Input)
+		}
 		if req.WorkingDir == "" {
 			t.Fatal("working dir is empty")
 		}
@@ -146,7 +193,13 @@ func TestRunHostExecClientStreamsAndReturnsExitCode(t *testing.T) {
 	t.Setenv(sandboxHostExecSocketEnv, sock)
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
-	err = runHostExecClient([]string{"git", "status"}, &stdout, &stderr)
+	err = runHostExecClientWithInput(
+		[]string{"git", "status"},
+		strings.NewReader("morning drizzle\n"),
+		false,
+		&stdout,
+		&stderr,
+	)
 	var codeErr *exitCodeError
 	if !errors.As(err, &codeErr) {
 		t.Fatalf("expected exitCodeError, got %v", err)
