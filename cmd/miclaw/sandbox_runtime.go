@@ -12,7 +12,7 @@ import (
 const (
 	sandboxChildEnv               = "MICLAW_SANDBOX_CHILD"
 	sandboxEntrypoint             = "/usr/local/bin/miclaw"
-	sandboxRuntimeImage           = "alpine:3.21"
+	sandboxRuntimeImage           = "python:3.12-slim"
 	sandboxContainerNetNone       = "none"
 	sandboxDefaultPATH            = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 	sandboxHostBinHostDir         = "sandbox/host-bin"
