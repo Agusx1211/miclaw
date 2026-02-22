@@ -99,10 +99,11 @@ func toolCallStyleSection() string {
 
 func messagingSection() string {
 	out := strings.TrimSpace(`- Your text output is private internal thinking.
-- To communicate externally, you must call the message tool.
+- If you emit plain assistant text (without tool calls), the runtime treats that as done and goes to sleep.
+- Use the message tool for external replies, and only emit plain assistant text when you are out of work.
+- The user will only receive messages sent over the message tool.
 - Use the typing tool to control Signal typing indicators (on/off) when needed.
-- Source tags are included inline (for example: [signal:dm:user-1], [webhook:deploy], [cron:heartbeat]).
-- When there is no pending work, stop.`)
+- Source tags are included inline (for example: [signal:dm:user-1], [webhook:deploy], [cron:heartbeat]).`)
 
 	return out
 }
