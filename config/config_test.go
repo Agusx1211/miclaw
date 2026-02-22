@@ -57,7 +57,6 @@ func TestLoadAcceptsValidFullConfig(t *testing.T) {
 			"mounts": [
 				{"host": "/tmp", "container": "/workspace", "mode": "rw"}
 			],
-			"ssh_key_path": "~/.ssh/id_ed25519",
 			"host_user": "runner"
 		},
 		"memory": {
@@ -301,7 +300,7 @@ func TestLoadRejectsInvalidThinkingEffort(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsSandboxHostCommandsWithoutSSHKey(t *testing.T) {
+func TestLoadAcceptsSandboxHostCommandsWithoutKeyPath(t *testing.T) {
 	p := writeConfigFile(t, `{
 		"provider": {
 			"backend": "lmstudio",
@@ -313,12 +312,12 @@ func TestLoadRejectsSandboxHostCommandsWithoutSSHKey(t *testing.T) {
 		}
 	}`)
 
-	_, err := Load(p)
-	if err == nil {
-		t.Fatal("expected sandbox host command validation error")
+	c, err := Load(p)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
 	}
-	if !strings.Contains(err.Error(), "sandbox.ssh_key_path") {
-		t.Fatalf("expected sandbox.ssh_key_path error, got: %v", err)
+	if len(c.Sandbox.HostCommands) != 1 || c.Sandbox.HostCommands[0] != "git" {
+		t.Fatalf("unexpected host commands: %#v", c.Sandbox.HostCommands)
 	}
 }
 
@@ -330,7 +329,6 @@ func TestLoadRejectsSandboxHostCommandsWithSpaces(t *testing.T) {
 		},
 		"sandbox": {
 			"enabled": true,
-			"ssh_key_path": "~/.ssh/id_ed25519",
 			"host_commands": ["git status"]
 		}
 	}`)

@@ -334,14 +334,6 @@ func validateSandbox(s SandboxConfig) error {
 			return fmt.Errorf("sandbox.mounts[%d].mode must be ro or rw", i)
 		}
 	}
-	if s.SSHKeyPath != "" {
-		if _, err := expandHome(s.SSHKeyPath); err != nil {
-			return fmt.Errorf("sandbox.ssh_key_path: %v", err)
-		}
-	}
-	if len(s.HostCommands) > 0 && s.SSHKeyPath == "" {
-		return fmt.Errorf("sandbox.ssh_key_path is required when sandbox.host_commands is set")
-	}
 	for i, cmd := range s.HostCommands {
 		if strings.TrimSpace(cmd) == "" {
 			return fmt.Errorf("sandbox.host_commands[%d] must not be empty", i)

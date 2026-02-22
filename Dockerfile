@@ -6,8 +6,7 @@ COPY . .
 RUN go build -o /tmp/miclaw ./cmd/miclaw
 
 FROM alpine:3.21
-RUN apk add --no-cache openssh-client \
-	&& adduser -D -u 1000 miclaw
+RUN adduser -D -u 1000 miclaw
 COPY --from=builder /tmp/miclaw /usr/local/bin/miclaw
 WORKDIR /workspace
 USER miclaw

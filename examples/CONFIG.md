@@ -30,8 +30,8 @@
 - `enabled`: Turn sandbox execution on/off.
 - `network`: Sandbox network mode.
 - `mounts`: Optional mount list (`host`, `container`, `mode`).
-- `ssh_key_path`: Optional SSH key path.
-- `host_user`: Host account used by sandbox jobs.
+- `host_user`: Host user label for sandbox host-command logs.
+- `host_commands`: Optional allowlist of command names proxied to the host executor.
 
 ## Core
 - `workspace`: Directory for workspace files.

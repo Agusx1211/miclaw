@@ -194,7 +194,7 @@ type ExecParams struct {
 - Output limit: 100K chars (completed), 10K chars (background)
 - Background processes stored in process registry
 
-When running inside the sandbox, `exec` checks if the command matches a configured host command and routes it through SSH automatically. The agent doesn't need to know about SSH — it just calls `exec`. See [08-sandboxing.md](./08-sandboxing.md).
+When running inside the sandbox, configured host commands are exposed in PATH and proxied through Miclaw's Unix-socket host executor automatically. The agent doesn't need to know about the proxy transport — it just calls `exec`. See [08-sandboxing.md](./08-sandboxing.md).
 
 ### process
 

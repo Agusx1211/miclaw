@@ -43,7 +43,7 @@ The setup TUI supports:
 - Auto-loading provider models with searchable selection
 - OpenAI Codex OAuth flow (open auth URL, paste full redirect URL)
 - Signal setup and policy configuration
-- Docker sandbox setup (network, mounts, host user, SSH key)
+- Docker sandbox setup (network, mounts, host command proxy allowlist)
 - Memory and webhook configuration
 
 ### Provider
@@ -219,9 +219,8 @@ The container is started when `sandbox.enabled=true`, kept alive while miclaw ru
 | `enabled` | `false` | Enable sandboxing |
 | `network` | `none` | `none`, `host`, `bridge`, or a custom network name |
 | `mounts` | `[]` | Extra bind mounts with `host`, `container`, and `mode` (`ro`/`rw`) |
-| `ssh_key_path` | | SSH key for host command execution |
-| `host_user` | `pipo-runner` | Host user for SSH commands |
-| `host_commands` | `[]` | Command shims exposed inside sandbox and proxied to host via SSH |
+| `host_user` | `pipo-runner` | Host user label for proxied host command logs |
+| `host_commands` | `[]` | Command names exposed inside sandbox and proxied to the host executor socket |
 
 When sandboxing is enabled, miclaw always mounts:
 - The workspace path (`rw`)
@@ -304,7 +303,7 @@ cp examples/docker-compose.prod.yml .
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-The Dockerfile builds a minimal Alpine image with the miclaw binary and an openssh-client (for sandbox SSH host commands).
+The Dockerfile builds a minimal Alpine image with the miclaw binary.
 
 ## Architecture
 

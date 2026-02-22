@@ -44,15 +44,24 @@ type runtimeDeps struct {
 }
 
 type cliFlags struct {
-	configPath  string
-	showVersion bool
-	setup       bool
-	toolCall    string
+	configPath     string
+	showVersion    bool
+	setup          bool
+	toolCall       string
+	hostExecClient bool
+	hostExecArgs   []string
 }
 
 func main() {
 
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
+		var codeErr *exitCodeError
+		if errors.As(err, &codeErr) {
+			if codeErr.Message != "" {
+				fmt.Fprintln(os.Stderr, codeErr.Message)
+			}
+			os.Exit(codeErr.Code)
+		}
 		log.Fatalf("%v", err)
 	}
 }
@@ -69,6 +78,17 @@ func run(args []string, stdout, stderr io.Writer) error {
 	}
 	if flags.toolCall != "" {
 		return runToolCall(flags.toolCall, stdout)
+	}
+	if flags.hostExecClient {
+		err := runHostExecClient(flags.hostExecArgs, stdout, stderr)
+		if err == nil {
+			return nil
+		}
+		var codeErr *exitCodeError
+		if errors.As(err, &codeErr) {
+			return codeErr
+		}
+		return &exitCodeError{Code: 1, Message: err.Error()}
 	}
 	configPath, err := expandHome(flags.configPath)
 	if err != nil {
@@ -134,17 +154,21 @@ func parseFlags(args []string) (cliFlags, error) {
 	setupRun := fs.Bool("setup", false, "run setup/configuration TUI and exit")
 	configureRun := fs.Bool("configure", false, "run setup/configuration TUI and exit")
 	toolCall := fs.String("tool-call", "", "internal: execute one tool call and exit")
+	hostExecClient := fs.Bool("host-exec-client", false, "internal: run a host command through sandbox proxy")
 	if err := fs.Parse(args); err != nil {
 		return cliFlags{}, err
 	}
-	if fs.NArg() != 0 {
+	hostExecArgs := fs.Args()
+	if !*hostExecClient && len(hostExecArgs) != 0 {
 		return cliFlags{}, fmt.Errorf("unexpected positional arguments")
 	}
 	return cliFlags{
-		configPath:  *configPath,
-		showVersion: *showVersion,
-		setup:       *setupRun || *configureRun,
-		toolCall:    *toolCall,
+		configPath:     *configPath,
+		showVersion:    *showVersion,
+		setup:          *setupRun || *configureRun,
+		toolCall:       *toolCall,
+		hostExecClient: *hostExecClient,
+		hostExecArgs:   hostExecArgs,
 	}, nil
 }
 

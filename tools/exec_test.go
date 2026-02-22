@@ -176,9 +176,8 @@ func TestExecSandboxAllowlistedCommandsRunLocally(t *testing.T) {
 		t.Fatalf("marshal exec params: %v", err)
 	}
 	got, err := execToolWithSandbox(config.SandboxConfig{
-		Enabled:    true,
-		SSHKeyPath: "/tmp/miclaw-non-existent-key",
-		HostUser:   "runner",
+		Enabled:  true,
+		HostUser: "runner",
 	}).Run(context.Background(), model.ToolCallPart{
 		ID:         "1",
 		Name:       "exec",
@@ -188,7 +187,7 @@ func TestExecSandboxAllowlistedCommandsRunLocally(t *testing.T) {
 		t.Fatalf("tool call: %v", err)
 	}
 	if got.IsError && strings.Contains(got.Content, "failed to start command") {
-		t.Fatalf("exec should not route through ssh: %q", got.Content)
+		t.Fatalf("exec should run locally in non-bridge tests: %q", got.Content)
 	}
 }
 

@@ -52,7 +52,6 @@ type SandboxConfig struct {
 	Enabled      bool     `json:"enabled"`
 	Network      string   `json:"network"`
 	Mounts       []Mount  `json:"mounts"`
-	SSHKeyPath   string   `json:"ssh_key_path"`
 	HostUser     string   `json:"host_user"`
 	HostCommands []string `json:"host_commands"`
 }

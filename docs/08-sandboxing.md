@@ -67,15 +67,16 @@ When sandboxing is enabled, these tools run in Docker:
 
 `exec` background mode is disabled in sandbox bridge mode.
 
-## 5. Host Command Shims
+## 5. Host Command Proxy
 
 You can expose selected host commands from inside the container.
 
 - Set `sandbox.host_commands` (command names)
-- Set `sandbox.ssh_key_path` and `sandbox.host_user`
+- Optionally set `sandbox.host_user` for host-side audit labeling
 
-Miclaw writes shim scripts and mounts them into the container PATH.
-Each shim uses SSH to run the host command.
+Miclaw starts a host-side executor server on a Unix socket.
+Inside the sandbox, Miclaw writes a tiny client launcher and command symlinks into PATH.
+Each allowlisted command call is proxied to the host server over the mounted socket.
 
 Example:
 
@@ -84,7 +85,6 @@ Example:
   "sandbox": {
     "enabled": true,
     "host_user": "pipo-runner",
-    "ssh_key_path": "~/.ssh/id_ed25519",
     "host_commands": ["git", "docker"]
   }
 }
@@ -94,4 +94,4 @@ Example:
 
 - No Docker socket mount.
 - No implicit host filesystem access outside configured mounts.
-- Host command access is explicit and allowlisted by shim name.
+- Host command access is explicit and allowlisted by command name.

@@ -19,6 +19,7 @@ import (
 
 type sandboxBridge struct {
 	containerID string
+	hostServer  *hostCommandServer
 }
 
 type sandboxProxyTool struct {
@@ -73,6 +74,18 @@ func startSandboxBridge(cfg *config.Config) (*sandboxBridge, error) {
 	if err != nil {
 		return nil, err
 	}
+	hostServer, err := startSandboxHostCommandServer(cfg)
+	if err != nil {
+		return nil, err
+	}
+	closeHostServer := hostServer != nil
+	if hostServer != nil {
+		defer func() {
+			if closeHostServer {
+				_ = hostServer.Close()
+			}
+		}()
+	}
 	log.Printf(
 		"[sandbox] tool bridge enabled network=%s mounts=%d host_commands=%d image=%s",
 		sandboxNetwork(cfg), len(cfg.Sandbox.Mounts), len(cfg.Sandbox.HostCommands), sandboxRuntimeImage,
@@ -87,7 +100,41 @@ func startSandboxBridge(cfg *config.Config) (*sandboxBridge, error) {
 		return nil, fmt.Errorf("sandbox bridge returned invalid container id: %v\n%s", err, strings.TrimSpace(string(out)))
 	}
 	log.Printf("[sandbox] bridge started id=%s", shortContainerID(id))
-	return &sandboxBridge{containerID: id}, nil
+	closeHostServer = false
+	return &sandboxBridge{containerID: id, hostServer: hostServer}, nil
+}
+
+func startSandboxHostCommandServer(cfg *config.Config) (*hostCommandServer, error) {
+	if len(cfg.Sandbox.HostCommands) == 0 {
+		return nil, nil
+	}
+	workspaceHostPath, err := resolveBindPath(cfg.Workspace)
+	if err != nil {
+		return nil, fmt.Errorf("sandbox workspace path: %v", err)
+	}
+	stateHostPath, err := resolveBindPath(cfg.StatePath)
+	if err != nil {
+		return nil, fmt.Errorf("sandbox state path: %v", err)
+	}
+	mounts := []config.Mount{{Host: workspaceHostPath, Container: workspaceHostPath, Mode: "rw"}}
+	for _, m := range cfg.Sandbox.Mounts {
+		hostPath, err := resolveBindPath(m.Host)
+		if err != nil {
+			return nil, fmt.Errorf("sandbox mount host %q: %v", m.Host, err)
+		}
+		mounts = append(mounts, config.Mount{
+			Host:      hostPath,
+			Container: m.Container,
+			Mode:      m.Mode,
+		})
+	}
+	return startHostCommandServer(hostCommandServerConfig{
+		SocketPath: sandboxHostExecutorSocketPath(stateHostPath),
+		Workspace:  workspaceHostPath,
+		Allowed:    cfg.Sandbox.HostCommands,
+		Mounts:     mounts,
+		HostUser:   cfg.Sandbox.HostUser,
+	})
 }
 
 func buildSandboxBridgeRunArgs(exePath string, cfg *config.Config) ([]string, error) {
@@ -107,7 +154,7 @@ func buildSandboxBridgeRunArgs(exePath string, cfg *config.Config) ([]string, er
 		{Host: exeHostPath, Container: sandboxEntrypoint, Mode: "ro"},
 		{Host: workspaceHostPath, Container: workspaceHostPath, Mode: "rw"},
 	}
-	bridgeMounts, bridgeEnv, bridgeNeeded, err := sandboxHostBridge(stateHostPath, cfg.Sandbox)
+	bridgeMounts, bridgeEnv, err := sandboxHostBridge(stateHostPath, cfg.Sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -137,9 +184,6 @@ func buildSandboxBridgeRunArgs(exePath string, cfg *config.Config) ([]string, er
 	}
 	for _, env := range bridgeEnv {
 		args = append(args, "-e", env)
-	}
-	if bridgeNeeded {
-		args = append(args, "--add-host", sandboxDockerHost+":"+sandboxDockerHostGateway)
 	}
 	seen := map[string]bool{}
 	for _, m := range mounts {
@@ -209,22 +253,31 @@ func (b *sandboxBridge) RunTool(ctx context.Context, call model.ToolCallPart) (t
 }
 
 func (b *sandboxBridge) Close() error {
-	if b == nil || b.containerID == "" {
+	if b == nil {
 		return nil
 	}
-	id := b.containerID
-	b.containerID = ""
-	cmd := exec.Command("docker", "stop", "--time", "2", id)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		text := strings.TrimSpace(string(out))
-		if strings.Contains(text, "No such container") || strings.Contains(text, "is not running") {
-			return nil
+	var firstErr error
+	if b.containerID != "" {
+		id := b.containerID
+		b.containerID = ""
+		cmd := exec.Command("docker", "stop", "--time", "2", id)
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			text := strings.TrimSpace(string(out))
+			if !strings.Contains(text, "No such container") && !strings.Contains(text, "is not running") {
+				firstErr = fmt.Errorf("stop sandbox bridge %s: %v\n%s", shortContainerID(id), err, text)
+			}
+		} else {
+			log.Printf("[sandbox] bridge stopped id=%s", shortContainerID(id))
 		}
-		return fmt.Errorf("stop sandbox bridge %s: %v\n%s", shortContainerID(id), err, text)
 	}
-	log.Printf("[sandbox] bridge stopped id=%s", shortContainerID(id))
-	return nil
+	if b.hostServer != nil {
+		if err := b.hostServer.Close(); err != nil && firstErr == nil {
+			firstErr = fmt.Errorf("stop host command server: %v", err)
+		}
+		b.hostServer = nil
+	}
+	return firstErr
 }
 
 func execBackgroundRequested(raw json.RawMessage) bool {

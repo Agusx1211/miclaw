@@ -86,7 +86,7 @@ Three backends only: LM Studio (local, OpenAI-compatible), OpenRouter (cloud, mu
 ### 8. Sandboxing
 **Document:** [08-sandboxing.md](./08-sandboxing.md)
 
-Everything runs inside a single long-lived Docker container — the main agent and all sub-agents share it. Three knobs: network access (none/bridge/host/custom), filesystem mounts (bind mounts with ro/rw), and host command execution (SSH forced commands with an allowlisted wrapper). No Docker socket mounting. No per-request container restarts.
+Everything runs inside a single long-lived Docker container — the main agent and all sub-agents share it. Three knobs: network access (none/bridge/host/custom), filesystem mounts (bind mounts with ro/rw), and host command execution (Unix-socket proxy with an allowlisted wrapper). No Docker socket mounting. No per-request container restarts.
 
 ## Data Flow: Complete Request Lifecycle
 

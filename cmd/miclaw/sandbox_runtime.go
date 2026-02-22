@@ -10,19 +10,18 @@ import (
 )
 
 const (
-	sandboxChildEnv          = "MICLAW_SANDBOX_CHILD"
-	sandboxEntrypoint        = "/usr/local/bin/miclaw"
-	sandboxRuntimeImage      = "alpine:3.21"
-	sandboxContainerNetNone  = "none"
-	sandboxDockerHost        = "host.docker.internal"
-	sandboxDockerHostGateway = "host-gateway"
-	sandboxDefaultPATH       = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
-	sandboxHostBinHostDir    = "sandbox/host-bin"
-	sandboxHostBinContDir    = "/opt/miclaw-host-bin"
-	sandboxSSHKeyContPath    = "/run/miclaw/ssh_key"
-	sandboxShimHostEnv       = "MICLAW_HOST_SHIM_HOST"
-	sandboxShimUserEnv       = "MICLAW_HOST_SHIM_USER"
-	sandboxShimKeyEnv        = "MICLAW_HOST_SHIM_KEY"
+	sandboxChildEnv               = "MICLAW_SANDBOX_CHILD"
+	sandboxEntrypoint             = "/usr/local/bin/miclaw"
+	sandboxRuntimeImage           = "alpine:3.21"
+	sandboxContainerNetNone       = "none"
+	sandboxDefaultPATH            = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+	sandboxHostBinHostDir         = "sandbox/host-bin"
+	sandboxHostBinContDir         = "/opt/miclaw-host-bin"
+	sandboxHostExecHostDir        = "sandbox/host-executor"
+	sandboxHostExecSocketFile     = "host-executor.sock"
+	sandboxHostExecSocketEnv      = "MICLAW_HOST_EXECUTOR_SOCK"
+	sandboxHostExecSocketContPath = "/run/miclaw/host-executor.sock"
+	sandboxHostExecClientName     = "host-executor-client"
 )
 
 func isSandboxChild() bool {
@@ -34,29 +33,52 @@ func runningInDocker() bool {
 	return err == nil
 }
 
-func sandboxHostBridge(stateHostPath string, s config.SandboxConfig) ([]config.Mount, []string, bool, error) {
+func sandboxHostBridge(stateHostPath string, s config.SandboxConfig) ([]config.Mount, []string, error) {
 	if len(s.HostCommands) == 0 {
-		return nil, nil, false, nil
-	}
-	keyHostPath, err := resolveBindPath(s.SSHKeyPath)
-	if err != nil {
-		return nil, nil, false, fmt.Errorf("sandbox ssh key path: %v", err)
+		return nil, nil, nil
 	}
 	hostBinPath := filepath.Join(stateHostPath, sandboxHostBinHostDir)
 	if err := writeHostCommandShims(hostBinPath, s.HostCommands); err != nil {
-		return nil, nil, false, err
+		return nil, nil, err
+	}
+	socketHostPath := sandboxHostExecutorSocketPath(stateHostPath)
+	if err := ensureHostExecutorSocketPath(socketHostPath); err != nil {
+		return nil, nil, err
 	}
 	mounts := []config.Mount{
-		{Host: keyHostPath, Container: sandboxSSHKeyContPath, Mode: "ro"},
 		{Host: hostBinPath, Container: sandboxHostBinContDir, Mode: "ro"},
+		{Host: socketHostPath, Container: sandboxHostExecSocketContPath, Mode: "rw"},
 	}
 	env := []string{
-		sandboxShimHostEnv + "=" + sandboxDockerHost,
-		sandboxShimUserEnv + "=" + s.HostUser,
-		sandboxShimKeyEnv + "=" + sandboxSSHKeyContPath,
+		sandboxHostExecSocketEnv + "=" + sandboxHostExecSocketContPath,
 		"PATH=" + sandboxHostBinContDir + ":" + sandboxDefaultPATH,
 	}
-	return mounts, env, true, nil
+	return mounts, env, nil
+}
+
+func sandboxHostExecutorSocketPath(stateHostPath string) string {
+	return filepath.Join(stateHostPath, sandboxHostExecHostDir, sandboxHostExecSocketFile)
+}
+
+func ensureHostExecutorSocketPath(socketPath string) error {
+	if err := os.MkdirAll(filepath.Dir(socketPath), 0o755); err != nil {
+		return fmt.Errorf("create host executor socket dir %q: %v", filepath.Dir(socketPath), err)
+	}
+	info, err := os.Stat(socketPath)
+	if err == nil {
+		if info.IsDir() {
+			return fmt.Errorf("host executor socket path %q is a directory", socketPath)
+		}
+		return nil
+	}
+	if !os.IsNotExist(err) {
+		return fmt.Errorf("stat host executor socket %q: %v", socketPath, err)
+	}
+	file, err := os.OpenFile(socketPath, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return fmt.Errorf("create host executor socket placeholder %q: %v", socketPath, err)
+	}
+	return file.Close()
 }
 
 func writeHostCommandShims(dir string, commands []string) error {
@@ -66,31 +88,39 @@ func writeHostCommandShims(dir string, commands []string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("create host command shim dir %q: %v", dir, err)
 	}
-	script := hostCommandShimScript()
+	clientPath := filepath.Join(dir, sandboxHostExecClientName)
+	script := hostExecutorClientScript()
+	if err := os.WriteFile(clientPath, []byte(script), 0o755); err != nil {
+		return fmt.Errorf("write host command client %q: %v", clientPath, err)
+	}
+	seen := map[string]bool{}
 	for _, command := range commands {
 		command = strings.TrimSpace(command)
-		if command == "" {
+		if command == "" || seen[command] {
 			continue
 		}
+		seen[command] = true
 		path := filepath.Join(dir, command)
-		if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		if err := os.Symlink(sandboxHostExecClientName, path); err != nil {
 			return fmt.Errorf("write host command shim %q: %v", path, err)
 		}
 	}
 	return nil
 }
 
-func hostCommandShimScript() string {
+func hostExecutorClientScript() string {
 	return `#!/bin/sh
 set -eu
 cmd="$(basename "$0")"
-host="${MICLAW_HOST_SHIM_HOST:?}"
-user="${MICLAW_HOST_SHIM_USER:?}"
-key="${MICLAW_HOST_SHIM_KEY:?}"
-if [ -t 0 ] && [ -t 1 ]; then
-  exec ssh -tt -i "$key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/miclaw_known_hosts "$user@$host" -- "$cmd" "$@"
+if [ "$cmd" = "` + sandboxHostExecClientName + `" ]; then
+  cmd="${1:-}"
+  if [ -z "$cmd" ]; then
+    echo "missing command" >&2
+    exit 2
+  fi
+  shift
 fi
-exec ssh -T -i "$key" -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=/tmp/miclaw_known_hosts "$user@$host" -- "$cmd" "$@"
+exec /usr/local/bin/miclaw --host-exec-client "$cmd" "$@"
 `
 }
 

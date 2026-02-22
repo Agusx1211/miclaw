@@ -111,11 +111,7 @@ func configureSandbox(u *ui, s *config.SandboxConfig) error {
 	if err != nil {
 		return err
 	}
-	sshKeyPath, err := u.askString("SSH key path (optional)", s.SSHKeyPath)
-	if err != nil {
-		return err
-	}
-	hostCommands, err := u.askCSV("Host command shims (optional, comma separated)", s.HostCommands)
+	hostCommands, err := u.askCSV("Host commands (optional, comma separated)", s.HostCommands)
 	if err != nil {
 		return err
 	}
@@ -125,7 +121,6 @@ func configureSandbox(u *ui, s *config.SandboxConfig) error {
 	}
 	s.Network = network
 	s.HostUser = hostUser
-	s.SSHKeyPath = sshKeyPath
 	s.HostCommands = hostCommands
 	s.Mounts = mounts
 	return nil

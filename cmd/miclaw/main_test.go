@@ -80,6 +80,24 @@ func TestConfigureFlagParsing(t *testing.T) {
 	}
 }
 
+func TestHostExecClientFlagParsing(t *testing.T) {
+	t.Parallel()
+
+	flags, err := parseFlags([]string{"--host-exec-client", "git", "status"})
+	if err != nil {
+		t.Fatalf("parse flags: %v", err)
+	}
+	if !flags.hostExecClient {
+		t.Fatal("hostExecClient = false")
+	}
+	if len(flags.hostExecArgs) != 2 {
+		t.Fatalf("hostExecArgs len = %d", len(flags.hostExecArgs))
+	}
+	if flags.hostExecArgs[0] != "git" || flags.hostExecArgs[1] != "status" {
+		t.Fatalf("hostExecArgs = %#v", flags.hostExecArgs)
+	}
+}
+
 func TestBuild(t *testing.T) {
 	t.Parallel()
 
@@ -297,10 +315,6 @@ func TestBuildSandboxBridgeRunArgsAddsHostCommandBridge(t *testing.T) {
 	exePath := filepath.Join(root, "miclaw")
 	workspace := filepath.Join(root, "workspace")
 	statePath := filepath.Join(root, "state")
-	keyPath := filepath.Join(root, "id_ed25519")
-	if err := os.WriteFile(keyPath, []byte("test-key"), 0o600); err != nil {
-		t.Fatalf("write key file: %v", err)
-	}
 	cfg := config.Default()
 	cfg.Provider = config.ProviderConfig{
 		Backend: "lmstudio",
@@ -308,8 +322,6 @@ func TestBuildSandboxBridgeRunArgsAddsHostCommandBridge(t *testing.T) {
 	}
 	cfg.Sandbox.Enabled = true
 	cfg.Sandbox.Network = "none"
-	cfg.Sandbox.HostUser = "runner"
-	cfg.Sandbox.SSHKeyPath = keyPath
 	cfg.Sandbox.HostCommands = []string{"git", "docker"}
 	cfg.Workspace = workspace
 	cfg.StatePath = statePath
@@ -321,40 +333,44 @@ func TestBuildSandboxBridgeRunArgsAddsHostCommandBridge(t *testing.T) {
 	if err != nil {
 		t.Fatalf("abs state path: %v", err)
 	}
-	absKey, err := filepath.Abs(keyPath)
-	if err != nil {
-		t.Fatalf("abs key path: %v", err)
-	}
 	shimHostPath := filepath.Join(absState, sandboxHostBinHostDir)
-	if !containsArgPair(args, "--add-host", sandboxDockerHost+":"+sandboxDockerHostGateway) {
-		t.Fatalf("missing --add-host in %q", args)
-	}
-	if !containsArgPair(args, "-e", sandboxShimHostEnv+"="+sandboxDockerHost) {
-		t.Fatalf("missing shim host env in %q", args)
-	}
-	if !containsArgPair(args, "-e", sandboxShimUserEnv+"="+cfg.Sandbox.HostUser) {
-		t.Fatalf("missing shim user env in %q", args)
-	}
-	if !containsArgPair(args, "-e", sandboxShimKeyEnv+"="+sandboxSSHKeyContPath) {
-		t.Fatalf("missing shim key env in %q", args)
-	}
+	socketHostPath := filepath.Join(absState, sandboxHostExecHostDir, sandboxHostExecSocketFile)
 	if !containsArgPair(args, "-e", "PATH="+sandboxHostBinContDir+":"+sandboxDefaultPATH) {
 		t.Fatalf("missing PATH shim env in %q", args)
 	}
-	if !containsArgPair(args, "--mount", "type=bind,source="+absKey+",target="+sandboxSSHKeyContPath+",readonly") {
-		t.Fatalf("missing key mount in %q", args)
+	if !containsArgPair(args, "-e", sandboxHostExecSocketEnv+"="+sandboxHostExecSocketContPath) {
+		t.Fatalf("missing host executor socket env in %q", args)
 	}
 	if !containsArgPair(args, "--mount", "type=bind,source="+shimHostPath+",target="+sandboxHostBinContDir+",readonly") {
 		t.Fatalf("missing shim mount in %q", args)
 	}
+	if !containsArgPair(args, "--mount", "type=bind,source="+socketHostPath+",target="+sandboxHostExecSocketContPath) {
+		t.Fatalf("missing host executor socket mount in %q", args)
+	}
+	clientPath := filepath.Join(shimHostPath, sandboxHostExecClientName)
+	clientRaw, err := os.ReadFile(clientPath)
+	if err != nil {
+		t.Fatalf("read client launcher: %v", err)
+	}
+	clientContent := string(clientRaw)
+	if !strings.Contains(clientContent, "--host-exec-client") {
+		t.Fatalf("unexpected client launcher content: %q", clientContent)
+	}
 	for _, command := range cfg.Sandbox.HostCommands {
-		raw, err := os.ReadFile(filepath.Join(shimHostPath, command))
+		path := filepath.Join(shimHostPath, command)
+		info, err := os.Lstat(path)
 		if err != nil {
-			t.Fatalf("read shim %q: %v", command, err)
+			t.Fatalf("stat shim %q: %v", command, err)
 		}
-		content := string(raw)
-		if !strings.Contains(content, "ssh -tt") || !strings.Contains(content, "ssh -T") {
-			t.Fatalf("unexpected shim content for %q: %q", command, content)
+		if info.Mode()&os.ModeSymlink == 0 {
+			t.Fatalf("expected shim %q to be symlink", command)
+		}
+		target, err := os.Readlink(path)
+		if err != nil {
+			t.Fatalf("readlink %q: %v", command, err)
+		}
+		if target != sandboxHostExecClientName {
+			t.Fatalf("unexpected shim target for %q: %q", command, target)
 		}
 	}
 }
